@@ -1,0 +1,220 @@
+/* ---------- header ---------- */
+.topbar {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 22px 28px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--card);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  flex-wrap: wrap;
+}
+.brand {
+  font-family: var(--serif);
+  font-size: 26px;
+  letter-spacing: 0.22em;
+  font-weight: 400;
+}
+.brand em {
+  font-style: normal;
+  color: var(--gold);
+}
+.brandSub {
+  font-size: 11px;
+  color: var(--ink2);
+  letter-spacing: 0.18em;
+  font-family: var(--mono);
+}
+.batchId {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink3);
+  letter-spacing: 0.1em;
+}
+.btnGhost {
+  border: 1px solid var(--gold);
+  background: transparent;
+  color: var(--gold);
+  font-family: var(--sans);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  padding: 7px 16px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition:
+    background 0.18s,
+    color 0.18s;
+}
+.btnGhost:hover {
+  background: var(--gold);
+  color: #fff;
+}
+.btnSolid {
+  composes: btnGhost;
+  background: var(--gold);
+  color: #fff;
+}
+.btnSolid:hover {
+  background: #8e6f21;
+  border-color: #8e6f21;
+}
+
+/* mode switch */
+.modeSw {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-left: 24px;
+}
+.modeSw button {
+  border: 0;
+  background: var(--card);
+  cursor: pointer;
+  padding: 7px 18px;
+  font-family: var(--sans);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--ink2);
+  border-right: 1px solid var(--line);
+  transition:
+    background 0.16s,
+    color 0.16s;
+}
+.modeSw button:last-child {
+  border-right: 0;
+}
+.modeSw button[aria-pressed='true'] {
+  background: var(--gold-wash);
+  color: var(--gold);
+}
+
+/* ---------- shell ---------- */
+.shell {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) 320px;
+  gap: 0;
+  align-items: start;
+}
+
+/* ---------- rail ---------- */
+.rail {
+  border-right: 1px solid var(--line);
+  padding: 22px 0;
+  position: sticky;
+  top: 76px;
+}
+.railItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 11px 18px 11px 20px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink2);
+  border-left: 2px solid transparent;
+  transition:
+    color 0.16s,
+    border-color 0.16s;
+}
+.railItem .num {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--ink3);
+  margin-bottom: 1px;
+}
+.railItem:hover {
+  color: var(--ink);
+}
+.railItem[aria-selected='true'] {
+  color: var(--ink);
+  border-left-color: var(--gold);
+}
+.railItem[aria-selected='true'] .num {
+  color: var(--gold);
+}
+
+/* ---------- stage / panels ---------- */
+.stage {
+  padding: 30px 34px 80px;
+  min-width: 0;
+}
+.panel {
+  animation: fade 0.3s ease;
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.panelHead {
+  margin: 0 0 26px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.panelHead h2 {
+  font-family: var(--serif);
+  font-size: 21px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  margin: 0;
+}
+.panelHead p {
+  margin: 5px 0 0;
+  font-size: 12px;
+  color: var(--ink2);
+}
+
+@media (max-width: 1080px) {
+  .shell {
+    grid-template-columns: 130px minmax(0, 1fr);
+  }
+}
+@media (max-width: 720px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+  .rail {
+    position: sticky;
+    top: 66px;
+    display: flex;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 0;
+    background: var(--card);
+    z-index: 15;
+  }
+  .railItem {
+    white-space: nowrap;
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+    padding: 10px 16px;
+  }
+  .railItem[aria-selected='true'] {
+    border-left-color: transparent;
+    border-bottom-color: var(--gold);
+  }
+  .stage {
+    padding: 24px 20px 40px;
+  }
+  .topbar {
+    padding: 16px 20px 14px;
+  }
+  .brand {
+    font-size: 21px;
+  }
+}

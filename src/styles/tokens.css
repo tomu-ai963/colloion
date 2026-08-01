@@ -1,0 +1,50 @@
+/* モックの CSS 変数をそのまま移植したデザイントークン */
+:root {
+  --paper: #fcfcfa;
+  --card: #ffffff;
+  --ink: #16150f;
+  --ink2: #6e6c62;
+  --ink3: #a3a197;
+  --line: #e4e2d8;
+  --line2: #f0eee6;
+  --gold: #a8842c;
+  --gold-soft: #dfcb93;
+  --gold-wash: #fbf6e9;
+  --warn: #b4453c;
+  --warn-wash: #fdf7f6;
+  --serif: 'Hiragino Mincho ProN', 'Yu Mincho', 'YuMincho', 'Noto Serif JP', serif;
+  --sans: 'Hiragino Sans', 'Yu Gothic UI', 'Yu Gothic', 'Noto Sans JP', system-ui, sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
