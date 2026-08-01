@@ -1,7 +1,14 @@
 {
   "name": "colloion",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "description": "コロイド・イオン溶液の電解調製を記録／計算するツール（趣味実験用）",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tomu-ai963/colloion.git"
+  },
+  "homepage": "https://tomu-ai963.github.io/colloion/",
   "type": "module",
   "scripts": {
     "dev": "vite",
