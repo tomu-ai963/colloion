@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Colloion — 通電中</title>
+<style>
+:root{
+  --bg:#12110E;
+  --bg2:#191713;
+  --panel:#1E1B16;
+  --line:#2E2A23;
+  --line2:#252119;
+  --ink:#F2EFE6;
+  --ink2:#9A9488;
+  --ink3:#635E54;
+  --gold:#D9B85C;
+  --gold-dim:#8A7433;
+  --gold-wash:rgba(217,184,92,.09);
+  --warn:#D9705C;
+  --serif:"Hiragino Mincho ProN","Yu Mincho",YuMincho,"Noto Serif JP",serif;
+  --sans:"Hiragino Sans","Yu Gothic UI","Yu Gothic","Noto Sans JP",system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%}
+body{
+  background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;
+}
+:focus-visible{outline:2px solid var(--gold);outline-offset:3px;border-radius:2px}
+
+/* ---- top ---- */
+.bar{
+  display:flex;align-items:center;gap:16px;padding:14px 26px;
+  border-bottom:1px solid var(--line);background:var(--bg2);flex-wrap:wrap;
+}
+.bar .id{font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--ink3)}
+.bar .name{font-family:var(--serif);font-size:15px;letter-spacing:.14em}
+.pill{
+  display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);
+  font-size:10px;letter-spacing:.14em;color:var(--gold);
+  border:1px solid var(--gold-dim);border-radius:2px;padding:4px 10px;
+}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--gold);animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+.bar .right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.icobtn{
+  border:1px solid var(--line);background:transparent;color:var(--ink2);cursor:pointer;
+  font-family:var(--mono);font-size:10px;letter-spacing:.12em;padding:6px 12px;border-radius:2px;
+}
+.icobtn:hover{border-color:var(--gold-dim);color:var(--gold)}
+.icobtn[aria-pressed="true"]{border-color:var(--gold-dim);color:var(--gold);background:var(--gold-wash)}
+
+/* ---- layout ---- */
+.wrap{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:0;min-height:calc(100vh - 53px)}
+.main{padding:34px 30px 40px;min-width:0}
+.side{border-left:1px solid var(--line);padding:26px 22px 40px;background:var(--bg2)}
+
+/* ---- hero ---- */
+.hero{display:grid;grid-template-columns:1fr auto;gap:30px;align-items:center;margin-bottom:8px}
+.elapsed{font-family:var(--serif);font-size:clamp(56px,10vw,96px);line-height:.95;letter-spacing:.01em;font-variant-numeric:tabular-nums}
+.elapsed .s{font-size:.42em;color:var(--ink2)}
+.elapsed-lbl{font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:var(--ink3);margin-bottom:12px}
+.remain{text-align:right}
+.remain .v{font-family:var(--serif);font-size:26px;letter-spacing:.02em}
+.remain .l{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;color:var(--ink3);margin-bottom:5px}
+.remain .eta{font-family:var(--mono);font-size:11px;color:var(--ink2);margin-top:5px}
+
+/* progress */
+.prog{margin:26px 0 34px}
+.prog-track{height:3px;background:var(--line);position:relative;border-radius:2px;overflow:hidden}
+.prog-fill{height:100%;background:var(--gold);width:41%;transition:width .5s linear}
+.prog-meta{display:flex;justify-content:space-between;margin-top:9px;font-family:var(--mono);font-size:10.5px;color:var(--ink3)}
+.prog-meta b{color:var(--gold);font-weight:400}
+
+/* live figures */
+.figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
+.fig{background:var(--panel);padding:16px 16px 14px}
+.fig dt{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;color:var(--ink3);margin-bottom:8px}
+.fig dd{margin:0;font-family:var(--serif);font-size:29px;letter-spacing:.01em;font-variant-numeric:tabular-nums}
+.fig dd .u{font-family:var(--mono);font-size:10.5px;color:var(--ink2);margin-left:5px;letter-spacing:.1em}
+.fig.live dd{color:var(--gold)}
+.fig .sub{font-family:var(--mono);font-size:9.5px;color:var(--ink3);margin-top:5px}
+
+/* chart */
+.chart-head{display:flex;align-items:baseline;gap:14px;margin:38px 0 12px}
+.chart-head h2{font-family:var(--serif);font-size:15px;font-weight:400;letter-spacing:.12em;margin:0}
+.chart-head span{font-family:var(--mono);font-size:10px;color:var(--ink3);letter-spacing:.12em}
+.chart-head .lg{margin-left:auto;display:flex;gap:14px;font-family:var(--mono);font-size:9.5px;color:var(--ink3)}
+.chart-head .lg i{display:inline-block;width:14px;height:1.5px;vertical-align:3px;margin-right:5px}
+.chart{border:1px solid var(--line);background:var(--panel);padding:14px 12px 8px}
+
+/* segments */
+.seg-head{display:flex;align-items:baseline;margin:34px 0 10px}
+.seg-head h2{font-family:var(--serif);font-size:15px;font-weight:400;letter-spacing:.12em;margin:0}
+.seg-head span{font-family:var(--mono);font-size:10px;color:var(--ink3);letter-spacing:.1em;margin-left:14px}
+table.segs{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
+table.segs th{
+  text-align:left;font-size:9.5px;letter-spacing:.13em;color:var(--ink3);font-weight:400;
+  padding:0 8px 8px 0;border-bottom:1px solid var(--line);
+}
+table.segs td{padding:9px 8px 9px 0;border-bottom:1px solid var(--line2);color:var(--ink)}
+table.segs tr.now td{color:var(--gold)}
+table.segs td.n{color:var(--ink2)}
+.evt{font-size:10px;letter-spacing:.1em;color:var(--ink3);border:1px solid var(--line);padding:1px 7px;border-radius:2px}
+.evt.rev{color:var(--gold);border-color:var(--gold-dim)}
+
+/* ---- side ---- */
+.beaker{display:flex;justify-content:center;margin-bottom:4px}
+.cap{text-align:center;font-family:var(--mono);font-size:9px;letter-spacing:.16em;color:var(--ink3);margin-bottom:24px}
+.srow{display:flex;justify-content:space-between;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--line2)}
+.srow dt{font-size:11.5px;color:var(--ink2)}
+.srow dd{margin:0;font-family:var(--mono);font-size:12.5px}
+.shead{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;color:var(--ink3);margin:26px 0 8px}
+.shead:first-of-type{margin-top:0}
+
+/* countdown */
+.cd{border:1px solid var(--gold-dim);background:var(--gold-wash);padding:13px 15px;border-radius:2px;margin-bottom:22px}
+.cd .l{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;color:var(--gold);margin-bottom:6px}
+.cd .v{font-family:var(--serif);font-size:23px;letter-spacing:.02em;font-variant-numeric:tabular-nums}
+.cd .n{font-family:var(--mono);font-size:10px;color:var(--ink2);margin-top:4px}
+
+/* alert */
+.alert{
+  border:1px solid var(--warn);background:rgba(217,112,92,.08);
+  padding:12px 15px;border-radius:2px;margin-top:20px;font-size:11.5px;color:var(--ink2);line-height:1.6;
+}
+.alert b{color:var(--warn);font-weight:500;display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;margin-bottom:5px}
+
+/* ---- controls ---- */
+.dock{
+  position:sticky;bottom:0;display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+  padding:14px 30px;border-top:1px solid var(--line);background:rgba(18,17,14,.94);
+  backdrop-filter:blur(8px);grid-column:1 / -1;
+}
+.btn{
+  border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer;
+  font-family:var(--sans);font-size:13px;letter-spacing:.06em;padding:11px 22px;border-radius:2px;
+  transition:border-color .16s,color .16s,background .16s;
+}
+.btn:hover{border-color:var(--gold-dim);color:var(--gold)}
+.btn.primary{border-color:var(--gold-dim);background:var(--gold-wash);color:var(--gold)}
+.btn.primary:hover{background:var(--gold);color:#12110E;border-color:var(--gold)}
+.btn.ghost{color:var(--ink2)}
+.dock .adj{margin-left:auto;display:flex;align-items:center;gap:9px}
+.dock label{font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;color:var(--ink3)}
+.dock input{
+  width:78px;padding:8px 10px;background:var(--panel);border:1px solid var(--line);
+  border-radius:2px;color:var(--ink);font-family:var(--mono);font-size:13px;
+}
+.dock input:hover{border-color:var(--gold-dim)}
+
+@media (max-width:900px){
+  .wrap{grid-template-columns:1fr}
+  .side{border-left:0;border-top:1px solid var(--line);display:grid;
+        grid-template-columns:180px 1fr;gap:24px;align-items:start;padding:24px 26px 30px}
+  .side .stats-g{grid-column:2}
+  .cd{grid-column:1 / -1;margin-bottom:0}
+}
+@media (max-width:640px){
+  .main{padding:24px 18px 30px}
+  .side{grid-template-columns:1fr;padding:22px 18px 30px}
+  .hero{grid-template-columns:1fr;gap:14px}
+  .remain{text-align:left}
+  .dock{padding:12px 18px}
+  .dock .adj{margin-left:0;width:100%;margin-top:4px}
+  .bar{padding:12px 18px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <span class="name">Colloion</span>
+  <span class="pill"><span class="dot"></span>通電中</span>
+  <span class="id">BATCH 2026-0801-01 ・ 銀 / 1.0 mA CC / 1000 mL</span>
+  <div class="right">
+    <button class="icobtn" aria-pressed="true" id="wake">画面ロック解除 ON</button>
+    <button class="icobtn" id="dim">減光</button>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <main class="main">
+
+    <div class="hero">
+      <div>
+        <div class="elapsed-lbl">経過時間</div>
+        <div class="elapsed" id="elapsed">1:14<span class="s">:22</span></div>
+      </div>
+      <div class="remain">
+        <div class="l">残り</div>
+        <div class="v" id="remain">1 時間 45 分</div>
+        <div class="eta" id="eta">終了 15:47 予定</div>
+      </div>
+    </div>
+
+    <div class="prog">
+      <div class="prog-track"><div class="prog-fill" id="fill"></div></div>
+      <div class="prog-meta">
+        <span>目標 <b>20.0 ppm</b></span>
+        <span id="pct">41% ・ 8.2 ppm 到達</span>
+        <span>3:00:00</span>
+      </div>
+    </div>
+
+    <dl class="figs">
+      <div class="fig live">
+        <dt>現在濃度</dt>
+        <dd id="ppm">8.2<span class="u">ppm</span></dd>
+        <div class="sub">積算ベース</div>
+      </div>
+      <div class="fig live">
+        <dt>積算電荷</dt>
+        <dd id="coul">4.42<span class="u">C</span></dd>
+        <div class="sub">区間合計</div>
+      </div>
+      <div class="fig">
+        <dt>電流</dt>
+        <dd id="cur">1.02<span class="u">mA</span></dd>
+        <div class="sub">設定 1.00</div>
+      </div>
+      <div class="fig">
+        <dt>電圧</dt>
+        <dd id="volt">18.4<span class="u">V</span></dd>
+        <div class="sub">上限 24</div>
+      </div>
+      <div class="fig">
+        <dt>溶出量</dt>
+        <dd id="mg">8.2<span class="u">mg</span></dd>
+        <div class="sub">η 92%</div>
+      </div>
+    </dl>
+
+    <div class="chart-head">
+      <h2>推移</h2><span>1:14:22</span>
+      <div class="lg">
+        <span><i style="background:#D9B85C"></i>濃度</span>
+        <span><i style="background:#6E8BA8"></i>電流</span>
+        <span><i style="background:#8A7C6A"></i>電圧</span>
+      </div>
+    </div>
+    <div class="chart">
+      <svg viewBox="0 0 720 190" width="100%" height="190" role="img" aria-label="濃度・電流・電圧の時間推移">
+        <g stroke="#2E2A23" stroke-width=".8">
+          <line x1="0" y1="20"  x2="720" y2="20"/>
+          <line x1="0" y1="65"  x2="720" y2="65"/>
+          <line x1="0" y1="110" x2="720" y2="110"/>
+          <line x1="0" y1="155" x2="720" y2="155"/>
+        </g>
+        <!-- reversal markers -->
+        <g stroke="#8A7433" stroke-width=".8" stroke-dasharray="2 4" opacity=".7">
+          <line x1="120" y1="8" x2="120" y2="170"/>
+          <line x1="240" y1="8" x2="240" y2="170"/>
+          <line x1="360" y1="8" x2="360" y2="170"/>
+          <line x1="480" y1="8" x2="480" y2="170"/>
+        </g>
+        <!-- voltage -->
+        <polyline fill="none" stroke="#8A7C6A" stroke-width="1.2" opacity=".75"
+          points="0,138 60,132 120,128 180,124 240,120 300,116 360,113 420,110 480,107 540,104"/>
+        <!-- current -->
+        <polyline fill="none" stroke="#6E8BA8" stroke-width="1.4"
+          points="0,96 40,94 80,97 120,88 160,95 200,93 240,90 280,94 320,92 360,95 400,91 440,93 480,90 520,92 540,91"/>
+        <!-- concentration -->
+        <polyline fill="none" stroke="#D9B85C" stroke-width="1.8" stroke-linejoin="round"
+          points="0,168 60,158 120,148 180,138 240,128 300,118 360,108 420,98 480,88 540,79"/>
+        <circle cx="540" cy="79" r="3.2" fill="#D9B85C"/>
+        <line x1="540" y1="8" x2="540" y2="178" stroke="#D9B85C" stroke-width=".7" opacity=".35"/>
+        <text x="546" y="76" font-family="ui-monospace,monospace" font-size="10" fill="#D9B85C">8.2 ppm</text>
+        <!-- projection -->
+        <polyline fill="none" stroke="#D9B85C" stroke-width="1.2" stroke-dasharray="3 4" opacity=".45"
+          points="540,79 620,60 700,41"/>
+        <text x="612" y="34" font-family="ui-monospace,monospace" font-size="9" fill="#635E54">予測</text>
+      </svg>
+    </div>
+
+    <div class="seg-head">
+      <h2>区間ログ</h2><span>電流が変わるたびに自動で区切られます</span>
+    </div>
+    <table class="segs">
+      <thead>
+        <tr><th>#</th><th>開始</th><th>長さ</th><th>電流</th><th>電荷</th><th>累計 ppm</th><th></th></tr>
+      </thead>
+      <tbody>
+        <tr class="now">
+          <td>04</td><td>14:18:40</td><td>13:42</td><td>1.02 mA</td><td>0.84 C</td><td>8.2</td>
+          <td><span class="evt rev">継続中</span></td>
+        </tr>
+        <tr><td class="n">03</td><td class="n">13:48:12</td><td>30:28</td><td>1.00 mA</td><td>1.83 C</td><td>6.6</td><td><span class="evt rev">極性反転</span></td></tr>
+        <tr><td class="n">02</td><td class="n">13:18:05</td><td>30:07</td><td>0.98 mA</td><td>1.77 C</td><td>3.2</td><td><span class="evt rev">極性反転</span></td></tr>
+        <tr><td class="n">01</td><td class="n">13:03:40</td><td>14:25</td><td>0.55 mA</td><td>0.48 C</td><td>0.9</td><td><span class="evt">立ち上げ</span></td></tr>
+      </tbody>
+    </table>
+
+  </main>
+
+  <aside class="side">
+
+    <div>
+      <div class="cd">
+        <div class="l">次の極性反転まで</div>
+        <div class="v" id="revcd">1:18</div>
+        <div class="n">15分ごと ・ 通算 4 回</div>
+      </div>
+
+      <div class="beaker">
+        <svg width="150" height="172" viewBox="0 0 150 172" role="img" aria-label="ビーカーの現在の状態">
+          <defs>
+            <linearGradient id="bm" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#fff" stop-opacity="0"/>
+              <stop offset="38%" stop-color="#fff" stop-opacity=".75"/>
+              <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+            </linearGradient>
+            <clipPath id="jr"><path d="M32 34 L32 146 Q32 156 42 156 L108 156 Q118 156 118 146 L118 34 Z"/></clipPath>
+          </defs>
+          <g clip-path="url(#jr)">
+            <rect id="liq" x="28" y="62" width="94" height="98" fill="rgba(217,184,92,.24)"/>
+            <polygon points="28,98 122,84 122,116" fill="url(#bm)" opacity=".3"/>
+            <rect x="28" y="97" width="94" height="1.4" fill="#fff" opacity=".55"/>
+          </g>
+          <path d="M32 34 L32 146 Q32 156 42 156 L108 156 Q118 156 118 146 L118 34" fill="none" stroke="#8A7433" stroke-width="1"/>
+          <line x1="27" y1="34" x2="123" y2="34" stroke="#8A7433" stroke-width="1"/>
+          <line x1="32" y1="62" x2="118" y2="62" stroke="#8A7433" stroke-width=".6" opacity=".5"/>
+          <line id="e1" x1="60" y1="12" x2="60" y2="130" stroke="#D9B85C" stroke-width="2.2" stroke-linecap="round"/>
+          <line id="e2" x1="92" y1="12" x2="92" y2="130" stroke="#6E8BA8" stroke-width="2.2" stroke-linecap="round"/>
+          <text id="p1" x="60" y="7" text-anchor="middle" font-family="ui-monospace,monospace" font-size="8.5" fill="#D9B85C">＋</text>
+          <text id="p2" x="92" y="7" text-anchor="middle" font-family="ui-monospace,monospace" font-size="8.5" fill="#6E8BA8">−</text>
+          <g id="bub" opacity=".5">
+            <circle cx="92" cy="120" r="1.4" fill="#9A9488"/>
+            <circle cx="94" cy="106" r="1.1" fill="#9A9488"/>
+            <circle cx="90" cy="90"  r="1.6" fill="#9A9488"/>
+            <circle cx="93" cy="76"  r="1.1" fill="#9A9488"/>
+          </g>
+        </svg>
+      </div>
+      <div class="cap">陰極側に水素 ・ 液温 26.4°C</div>
+    </div>
+
+    <div class="stats-g">
+      <div class="shead">セッション</div>
+      <dl style="margin:0">
+        <div class="srow"><dt>平均電流</dt><dd>0.94 mA</dd></div>
+        <div class="srow"><dt>実効 η</dt><dd>92 %（仮）</dd></div>
+        <div class="srow"><dt>電流密度</dt><dd>0.085 mA/cm²</dd></div>
+        <div class="srow"><dt>液温</dt><dd>26.4 °C <span style="color:#D9B85C">↑2.4</span></dd></div>
+        <div class="srow"><dt>投入電力量</dt><dd>0.081 Wh</dd></div>
+      </dl>
+
+      <div class="alert">
+        <b>WATCH</b>
+        液温が開始時より 2.4°C 上昇しています。同じ電圧でも電流が増えるため、CC 運転でも
+        電極表面の反応速度が変わり粒径に影響します。区間 04 の電流が設定値を 2% 超過しています。
+      </div>
+    </div>
+
+  </aside>
+
+  <div class="dock">
+    <button class="btn primary" id="pause">一時停止</button>
+    <button class="btn" id="mark">マークを記録</button>
+    <button class="btn ghost" id="stop">通電を終了</button>
+    <div class="adj">
+      <label for="setcur">電流を変更</label>
+      <input type="number" id="setcur" value="1.00" step="0.05" min="0.05">
+      <label for="setvolt">電圧</label>
+      <input type="number" id="setvolt" value="24" step="1" min="1">
+      <button class="btn" id="apply">適用して区間を切る</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let t = 4462;              // 経過秒
+const total = 10800;       // 3:00:00
+const EQ = 1.118, ETA = .92, VOL = 1;
+let coul = 4.42, cur = 1.02, running = true;
+
+const $ = i => document.getElementById(i);
+const pad = n => String(n).padStart(2,'0');
+
+function tick(){
+  if(!running) return;
+  t++; coul += cur/1000;
+
+  const h=Math.floor(t/3600), m=Math.floor(t%3600/60), s=t%60;
+  $('elapsed').innerHTML = `${h}:${pad(m)}<span class="s">:${pad(s)}</span>`;
+
+  const mg = EQ*coul*ETA, ppm = mg/VOL;
+  $('ppm').innerHTML  = ppm.toFixed(1)+'<span class="u">ppm</span>';
+  $('mg').innerHTML   = mg.toFixed(1)+'<span class="u">mg</span>';
+  $('coul').innerHTML = coul.toFixed(2)+'<span class="u">C</span>';
+
+  const p = Math.min(100, ppm/20*100);
+  $('fill').style.width = p+'%';
+  $('pct').textContent = `${p.toFixed(0)}% ・ ${ppm.toFixed(1)} ppm 到達`;
+
+  const rem = Math.max(0,total-t);
+  $('remain').textContent = `${Math.floor(rem/3600)} 時間 ${Math.floor(rem%3600/60)} 分`;
+  const end = new Date(Date.now()+rem*1000);
+  $('eta').textContent = `終了 ${end.getHours()}:${pad(end.getMinutes())} 予定`;
+
+  const rc = 900 - (t%900);
+  $('revcd').textContent = `${Math.floor(rc/60)}:${pad(rc%60)}`;
+
+  /* 液色 */
+  $('liq').setAttribute('fill', `rgba(217,184,92,${Math.min(.6, ppm/34).toFixed(3)})`);
+
+  /* 電流のゆらぎ */
+  if(t%7===0){
+    cur = 1.0 + (Math.random()-.4)*.06;
+    $('cur').innerHTML = cur.toFixed(2)+'<span class="u">mA</span>';
+  }
+}
+setInterval(tick,1000);
+
+$('pause').addEventListener('click',e=>{
+  running=!running;
+  e.target.textContent = running ? '一時停止' : '再開';
+  document.querySelector('.pill').innerHTML = running
+    ? '<span class="dot"></span>通電中' : '<span class="dot" style="animation:none;opacity:.4"></span>停止中';
+});
+$('dim').addEventListener('click',e=>{
+  const on = e.target.getAttribute('aria-pressed')==='true';
+  e.target.setAttribute('aria-pressed', on?'false':'true');
+  document.body.style.filter = on ? 'none' : 'brightness(.55)';
+});
+$('wake').addEventListener('click',e=>{
+  const on = e.target.getAttribute('aria-pressed')==='true';
+  e.target.setAttribute('aria-pressed', on?'false':'true');
+  e.target.textContent = on ? '画面ロック解除 OFF' : '画面ロック解除 ON';
+});
+/* 極性反転の表示 */
+setInterval(()=>{
+  const a=$('e1'), b=$('e2'), p1=$('p1'), p2=$('p2');
+  const c1=a.getAttribute('stroke'); a.setAttribute('stroke',b.getAttribute('stroke')); b.setAttribute('stroke',c1);
+  const x1=p1.textContent; p1.textContent=p2.textContent; p2.textContent=x1;
+  const f1=p1.getAttribute('fill'); p1.setAttribute('fill',p2.getAttribute('fill')); p2.setAttribute('fill',f1);
+}, 15000);
+</script>
+</body>
+</html>
