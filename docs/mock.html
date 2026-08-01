@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tyndall — コロイド電解ノート</title>
+<style>
+:root{
+  --paper:#FCFCFA;
+  --card:#FFFFFF;
+  --ink:#16150F;
+  --ink2:#6E6C62;
+  --ink3:#A3A197;
+  --line:#E4E2D8;
+  --line2:#F0EEE6;
+  --gold:#A8842C;
+  --gold-soft:#DFCB93;
+  --gold-wash:#FBF6E9;
+  --serif:"Hiragino Mincho ProN","Yu Mincho","YuMincho","Noto Serif JP",serif;
+  --sans:"Hiragino Sans","Yu Gothic UI","Yu Gothic","Noto Sans JP",system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.7;-webkit-font-smoothing:antialiased;
+}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px;border-radius:2px}
+
+/* ---------- header ---------- */
+.topbar{
+  display:flex;align-items:baseline;gap:16px;
+  padding:22px 28px 18px;border-bottom:1px solid var(--line);
+  background:var(--card);position:sticky;top:0;z-index:20;flex-wrap:wrap;
+}
+.brand{font-family:var(--serif);font-size:26px;letter-spacing:.22em;font-weight:400}
+.brand em{font-style:normal;color:var(--gold)}
+.brand-sub{font-size:11px;color:var(--ink2);letter-spacing:.18em;font-family:var(--mono)}
+.batch-id{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink3);letter-spacing:.1em}
+.btn-new{
+  border:1px solid var(--gold);background:transparent;color:var(--gold);
+  font-family:var(--sans);font-size:12px;letter-spacing:.1em;
+  padding:7px 16px;border-radius:2px;cursor:pointer;transition:background .18s,color .18s;
+}
+.btn-new:hover{background:var(--gold);color:#fff}
+
+/* ---------- shell ---------- */
+.shell{display:grid;grid-template-columns:150px minmax(0,1fr) 320px;gap:0;align-items:start}
+
+/* ---------- rail ---------- */
+.rail{
+  border-right:1px solid var(--line);padding:22px 0;
+  position:sticky;top:76px;
+}
+.rail-item{
+  display:block;width:100%;text-align:left;background:none;border:0;cursor:pointer;
+  padding:11px 18px 11px 20px;font-family:var(--sans);font-size:13px;color:var(--ink2);
+  border-left:2px solid transparent;transition:color .16s,border-color .16s;
+}
+.rail-item .num{
+  display:block;font-family:var(--mono);font-size:10px;letter-spacing:.16em;
+  color:var(--ink3);margin-bottom:1px;
+}
+.rail-item:hover{color:var(--ink)}
+.rail-item[aria-selected="true"]{color:var(--ink);border-left-color:var(--gold)}
+.rail-item[aria-selected="true"] .num{color:var(--gold)}
+
+/* ---------- panels ---------- */
+.stage{padding:30px 34px 80px;min-width:0}
+.panel{display:none;animation:fade .3s ease}
+.panel.on{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.panel-head{margin:0 0 26px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.panel-head h2{font-family:var(--serif);font-size:21px;font-weight:400;letter-spacing:.12em;margin:0}
+.panel-head p{margin:5px 0 0;font-size:12px;color:var(--ink2)}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:22px 26px}
+.field{min-width:0}
+.field > label,.field .lbl{
+  display:block;font-family:var(--mono);font-size:10px;letter-spacing:.14em;
+  color:var(--ink2);margin-bottom:7px;text-transform:uppercase;
+}
+.field .jp{font-family:var(--sans);letter-spacing:.06em;text-transform:none;font-size:11px}
+input[type=number],input[type=text],select{
+  width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:2px;
+  background:var(--card);font-family:var(--mono);font-size:14px;color:var(--ink);
+}
+select{font-family:var(--sans)}
+input:hover,select:hover{border-color:var(--gold-soft)}
+.unit-row{display:flex;align-items:center;gap:8px}
+.unit{font-family:var(--mono);font-size:11px;color:var(--ink3);white-space:nowrap}
+
+/* chips + segmented */
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.chip{
+  border:1px solid var(--line);background:var(--card);border-radius:2px;cursor:pointer;
+  padding:4px 10px;font-family:var(--mono);font-size:11px;color:var(--ink2);
+}
+.chip:hover{border-color:var(--gold-soft);color:var(--ink)}
+.seg{display:flex;border:1px solid var(--line);border-radius:2px;overflow:hidden}
+.seg button{
+  flex:1;border:0;background:var(--card);cursor:pointer;padding:8px 4px;
+  font-family:var(--sans);font-size:12px;color:var(--ink2);
+  border-right:1px solid var(--line2);transition:background .16s,color .16s;
+}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--gold-wash);color:var(--gold)}
+
+input[type=range]{width:100%;accent-color:var(--gold)}
+.range-val{font-family:var(--mono);font-size:12px;color:var(--ink);margin-top:2px}
+
+.note{
+  margin-top:26px;border-left:2px solid var(--gold-soft);background:var(--gold-wash);
+  padding:12px 16px;font-size:12px;color:var(--ink2);border-radius:0 2px 2px 0;
+}
+.note b{color:var(--ink);font-weight:500}
+
+/* inverse calc box */
+.inverse{
+  margin-top:28px;border:1px solid var(--line);border-radius:2px;padding:18px 20px;background:var(--card);
+}
+.inverse h3{margin:0 0 4px;font-family:var(--serif);font-size:15px;font-weight:400;letter-spacing:.1em}
+.inverse p{margin:0 0 16px;font-size:11px;color:var(--ink2)}
+.inverse-out{
+  margin-top:16px;padding-top:14px;border-top:1px dashed var(--line);
+  font-family:var(--serif);font-size:24px;letter-spacing:.04em;
+}
+.inverse-out span{font-family:var(--mono);font-size:11px;color:var(--ink2);letter-spacing:.1em;margin-left:8px}
+
+/* stock solution card */
+.hidden{display:none!important}
+.stock{
+  border:1px solid var(--gold-soft);background:var(--gold-wash);
+  border-radius:2px;padding:18px 20px;margin-top:6px;
+}
+.stock-step{margin-bottom:16px}
+.stock-step:last-of-type{margin-bottom:0}
+.stock-step .st{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;color:var(--gold);
+  display:block;margin-bottom:8px;
+}
+.stock .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.stock input{background:#fff;max-width:96px}
+.stock-out{
+  font-family:var(--mono);font-size:12px;color:var(--ink);
+  border-top:1px dashed var(--gold-soft);margin-top:14px;padding-top:12px;
+}
+.stock-out b{font-family:var(--serif);font-size:19px;font-weight:400;letter-spacing:.02em}
+.arrow{font-size:14px;color:var(--gold);margin:2px 0 6px;line-height:1}
+.calib{
+  margin-top:14px;padding-top:12px;border-top:1px dashed var(--gold-soft);
+  font-size:11px;color:var(--ink2);
+}
+.calib .row{margin-top:7px}
+.subhead{
+  font-family:var(--serif);font-size:16px;font-weight:400;letter-spacing:.1em;
+  margin:34px 0 4px;padding-bottom:8px;border-bottom:1px solid var(--line);
+}
+.subhead:first-of-type{margin-top:0}
+.subhead + p{margin:0 0 16px;font-size:11.5px;color:var(--ink2)}
+
+.stock.custom{background:var(--card);border-color:var(--line)}
+.stock.custom .st{color:var(--ink2)}
+.stock.custom .calib{border-top-color:var(--line)}
+.stock input[type=text]{max-width:none;width:100%}
+.fx{
+  margin-top:7px;font-family:var(--serif);font-size:18px;letter-spacing:.02em;color:var(--gold);
+}
+.fx.err{font-family:var(--sans);font-size:12px;color:#B4453C}
+.btn-save,.btn-cancel{
+  border:1px solid var(--gold);background:var(--gold);color:#fff;border-radius:2px;cursor:pointer;
+  font-family:var(--sans);font-size:12px;letter-spacing:.08em;padding:8px 18px;
+}
+.btn-cancel{background:transparent;color:var(--ink2);border-color:var(--line)}
+.btn-save:hover{background:#8E6F21;border-color:#8E6F21}
+.btn-cancel:hover{border-color:var(--ink3);color:var(--ink)}
+
+/* mode switch */
+.mode-sw{display:flex;border:1px solid var(--line);border-radius:2px;overflow:hidden;margin-left:24px}
+.mode-sw button{
+  border:0;background:var(--card);cursor:pointer;padding:7px 18px;
+  font-family:var(--sans);font-size:12px;letter-spacing:.08em;color:var(--ink2);
+  border-right:1px solid var(--line);transition:background .16s,color .16s;
+}
+.mode-sw button:last-child{border-right:0}
+.mode-sw button[aria-pressed="true"]{background:var(--gold-wash);color:var(--gold)}
+
+/* advisory */
+.advis{
+  margin-top:24px;border:1px solid var(--line);border-left:2px solid var(--gold);
+  border-radius:0 2px 2px 0;padding:14px 18px;background:var(--card);font-size:12px;color:var(--ink2);
+}
+.advis.warn{border-left-color:#B4453C;background:#FDF7F6}
+.advis .ah{
+  display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;
+  color:var(--gold);margin-bottom:6px;
+}
+.advis.warn .ah{color:#B4453C}
+.advis b{color:var(--ink);font-weight:500}
+
+/* pH gauge */
+.gauge{margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
+.gauge-lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;color:var(--ink3);margin-bottom:10px}
+.gauge-scale{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--ink3);margin-top:5px}
+
+/* log table */
+.log{width:100%;border-collapse:collapse;font-size:12.5px}
+.log th{
+  text-align:left;font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--ink3);
+  font-weight:400;padding:0 10px 9px 0;border-bottom:1px solid var(--line);
+}
+.log td{padding:11px 10px 11px 0;border-bottom:1px solid var(--line2);font-family:var(--mono)}
+.log td.jp{font-family:var(--sans)}
+.swatch{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:7px;vertical-align:-1px;border:1px solid rgba(0,0,0,.12)}
+.tag{font-family:var(--mono);font-size:10px;letter-spacing:.08em;padding:2px 7px;border:1px solid var(--line);border-radius:2px;color:var(--ink2)}
+.tag.ok{border-color:var(--gold-soft);color:var(--gold);background:var(--gold-wash)}
+
+/* ---------- readout ---------- */
+.readout{
+  border-left:1px solid var(--line);padding:26px 24px 40px;position:sticky;top:76px;background:var(--paper);
+}
+.beaker-wrap{display:flex;justify-content:center;margin-bottom:6px}
+.tyndall-caption{
+  text-align:center;font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;
+  color:var(--ink3);margin-bottom:22px;
+}
+.big{font-family:var(--serif);font-size:52px;line-height:1;letter-spacing:.02em;font-weight:400}
+.big .u{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--ink2);margin-left:8px}
+.big-lbl{font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--ink3);margin-bottom:6px}
+.stats{margin-top:26px;border-top:1px solid var(--line)}
+.stat{display:flex;justify-content:space-between;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--line2)}
+.stat dt{font-size:11.5px;color:var(--ink2)}
+.stat dd{margin:0;font-family:var(--mono);font-size:13px}
+.tds-note{margin-top:18px;font-size:11px;color:var(--ink3);line-height:1.65}
+
+/* mobile bar */
+.mobile-bar{display:none}
+
+@media (max-width:1080px){
+  .shell{grid-template-columns:130px minmax(0,1fr)}
+  .readout{grid-column:1 / -1;border-left:0;border-top:1px solid var(--line);position:static;
+    display:grid;grid-template-columns:190px 1fr;gap:30px;align-items:center;padding:26px 30px 60px}
+  .stats{grid-column:1 / -1;margin-top:0}
+}
+@media (max-width:720px){
+  .shell{grid-template-columns:1fr}
+  .rail{position:sticky;top:66px;display:flex;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);
+    padding:0;background:var(--card);z-index:15}
+  .rail-item{white-space:nowrap;border-left:0;border-bottom:2px solid transparent;padding:10px 16px}
+  .rail-item[aria-selected="true"]{border-left-color:transparent;border-bottom-color:var(--gold)}
+  .stage{padding:24px 20px 40px}
+  .readout{grid-template-columns:1fr;justify-items:center;text-align:center;padding:24px 20px 60px}
+  .stats{width:100%}
+  .topbar{padding:16px 20px 14px}
+  .brand{font-size:21px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div>
+    <div class="brand">TYND<em>A</em>LL</div>
+    <div class="brand-sub">コロイド電解ノート</div>
+  </div>
+  <div class="mode-sw" data-seg="prodmode">
+    <button aria-pressed="true"  data-pm="colloid">コロイド</button>
+    <button aria-pressed="false" data-pm="ion">イオン</button>
+  </div>
+  <div class="batch-id">BATCH&nbsp;&nbsp;2026-0731-04</div>
+  <button class="btn-new">新しいバッチ</button>
+</header>
+
+<div class="shell">
+
+  <!-- rail -->
+  <nav class="rail" role="tablist" aria-label="工程">
+    <button class="rail-item" role="tab" aria-selected="true"  data-tab="water"><span class="num">01</span>水</button>
+    <button class="rail-item" role="tab" aria-selected="false" data-tab="elec"><span class="num">02</span>電極</button>
+    <button class="rail-item" role="tab" aria-selected="false" data-tab="add"><span class="num">03</span>添加物</button>
+    <button class="rail-item" role="tab" aria-selected="false" data-tab="power"><span class="num">04</span>通電</button>
+    <button class="rail-item" role="tab" aria-selected="false" data-tab="log"><span class="num">05</span>記録</button>
+  </nav>
+
+  <!-- panels -->
+  <main class="stage">
+
+    <!-- 01 水 -->
+    <section class="panel on" id="p-water" role="tabpanel">
+      <div class="panel-head">
+        <h2>水</h2>
+        <p>仕込み量と水質。ここで入れた量が ppm の分母になります。</p>
+      </div>
+      <div class="grid">
+        <div class="field">
+          <label class="lbl" for="vol">水量 <span class="jp">/ Volume</span></label>
+          <div class="unit-row"><input type="number" id="vol" value="1000" min="10" step="10"><span class="unit">mL</span></div>
+          <div class="chips">
+            <button class="chip" data-vol="250">250</button>
+            <button class="chip" data-vol="500">500</button>
+            <button class="chip" data-vol="1000">1000</button>
+            <button class="chip" data-vol="2000">2000</button>
+          </div>
+        </div>
+        <div class="field">
+          <span class="lbl">水の種類</span>
+          <div class="seg" data-seg="water">
+            <button aria-pressed="true">蒸留水</button>
+            <button aria-pressed="false">RO水</button>
+            <button aria-pressed="false">精製水</button>
+            <button aria-pressed="false">超純水</button>
+          </div>
+        </div>
+        <div class="field">
+          <label class="lbl" for="tds0">初期 TDS</label>
+          <div class="unit-row"><input type="number" id="tds0" value="1" min="0" step="1"><span class="unit">ppm</span></div>
+        </div>
+        <div class="field">
+          <label class="lbl" for="temp">水温 <span class="jp">/ Temp</span></label>
+          <input type="range" id="temp" min="5" max="95" value="24">
+          <div class="range-val"><span id="temp-v">24</span> °C</div>
+        </div>
+      </div>
+      <div class="note">水温が高いほど導電率が上がり、同じ電圧でも電流が増えます。<b>定電流（CC）で回すなら影響は小さめ</b>ですが、粒径には効いてきます。</div>
+    </section>
+
+    <!-- 02 電極 -->
+    <section class="panel" id="p-elec" role="tabpanel">
+      <div class="panel-head">
+        <h2>電極</h2>
+        <p>陽極の金属が溶け出します。ここの選択で電気化学当量が切り替わります。</p>
+      </div>
+      <div class="grid">
+        <div class="field">
+          <label class="lbl" for="anode">陽極 <span class="jp">＋ / 溶出側</span></label>
+          <select id="anode">
+            <option value="Ag" selected>銀 Ag — 1.118 mg/C</option>
+            <option value="Au">金 Au³⁺ — 0.681 mg/C</option>
+            <option value="Cu">銅 Cu²⁺ — 0.329 mg/C</option>
+            <option value="Zn">亜鉛 Zn²⁺ — 0.339 mg/C</option>
+            <option value="Mg">マグネシウム Mg²⁺ — 0.126 mg/C</option>
+            <option value="Fe">鉄 Fe²⁺ — 0.289 mg/C</option>
+            <option value="Mn">マンガン Mn²⁺ — 0.285 mg/C</option>
+            <option value="Ca">カルシウム Ca²⁺ — 電解不可</option>
+            <option value="Pt">白金 Pt — 不溶性</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="lbl" for="cathode">陰極 <span class="jp">− / 析出側</span></label>
+          <select id="cathode">
+            <option>銀 Ag</option>
+            <option>白金 Pt</option>
+            <option>グラファイト C</option>
+            <option>ステンレス SUS316</option>
+          </select>
+        </div>
+        <div class="field">
+          <span class="lbl">純度</span>
+          <div class="seg" data-seg="purity">
+            <button aria-pressed="false">99.9%</button>
+            <button aria-pressed="true">99.99%</button>
+            <button aria-pressed="false">99.999%</button>
+          </div>
+        </div>
+        <div class="field">
+          <label class="lbl" for="area">浸漬面積</label>
+          <div class="unit-row"><input type="number" id="area" value="12" min="0.5" step="0.5"><span class="unit">cm²</span></div>
+        </div>
+        <div class="field">
+          <label class="lbl" for="gap">電極間距離</label>
+          <div class="unit-row"><input type="number" id="gap" value="35" min="1" step="1"><span class="unit">mm</span></div>
+        </div>
+        <div class="field" id="route-box">
+          <span class="lbl">製法</span>
+          <div class="seg" data-seg="route">
+            <button aria-pressed="true"  data-rt="ele">電解</button>
+            <button aria-pressed="false" data-rt="acid">酸溶解</button>
+            <button aria-pressed="false" data-rt="salt">塩を溶かす</button>
+          </div>
+        </div>
+      </div>
+      <div class="advis" id="advis">
+        <span class="ah">NOTE</span>
+        <span id="advis-t"></span>
+      </div>
+      <div class="note">電流密度は <b id="cd">0.08</b> mA/cm²。低いほど粒子が細かく、色が澄む傾向があります。0.1 を超えたあたりから黒い脱落片が出やすくなります。</div>
+    </section>
+
+    <!-- 03 添加物 -->
+    <section class="panel" id="p-add" role="tabpanel">
+      <div class="panel-head">
+        <h2>添加物</h2>
+        <p>電解質・還元剤・保護剤。金コロイドでは還元剤とのモル比が粒径を決めます。</p>
+      </div>
+      <div class="subhead">電解質</div>
+      <p>直接秤量するか、母液を作って分注するかを選べます。</p>
+
+      <div class="grid" style="margin-bottom:20px">
+        <div class="field">
+          <label class="lbl" for="salt">試薬</label>
+          <select id="salt">
+            <option value="0">なし（無添加）</option>
+            <option value="105.99" selected>炭酸ナトリウム Na₂CO₃ — 105.99</option>
+            <option value="84.01">炭酸水素ナトリウム NaHCO₃ — 84.01</option>
+            <option value="101.10">硝酸カリウム KNO₃ — 101.10</option>
+            <option value="294.10">クエン酸三ナトリウム 二水和物 — 294.10</option>
+            <option value="58.44">塩化ナトリウム NaCl — 58.44</option>
+            <option value="custom">＋ 試薬を登録…</option>
+          </select>
+        </div>
+        <div class="field">
+          <span class="lbl">投入方法</span>
+          <div class="seg" data-seg="addmode">
+            <button aria-pressed="false" data-mode="direct">直接秤量</button>
+            <button aria-pressed="true"  data-mode="stock">母液から分注</button>
+          </div>
+        </div>
+        <div class="field" id="direct-box">
+          <label class="lbl" for="salt-mg">秤量</label>
+          <div class="unit-row"><input type="number" id="salt-mg" value="27" min="0" step="1"><span class="unit">mg</span></div>
+        </div>
+      </div>
+
+      <div class="stock custom hidden" id="custom-box">
+        <div class="stock-step">
+          <span class="st">試薬を登録</span>
+          <div class="grid" style="gap:16px 20px">
+            <div class="field">
+              <label class="lbl" for="c-name">名称</label>
+              <input type="text" id="c-name" placeholder="炭酸ナトリウム 十水和物">
+            </div>
+            <div class="field">
+              <label class="lbl" for="c-formula">化学式</label>
+              <input type="text" id="c-formula" value="Na2CO3·10H2O" spellcheck="false">
+              <div class="fx" id="c-fx">分子量 286.14</div>
+            </div>
+            <div class="field">
+              <label class="lbl" for="c-purity">含量 / 純度</label>
+              <div class="unit-row"><input type="number" id="c-purity" value="99.5" min="1" max="100" step="0.1"><span class="unit">%</span></div>
+            </div>
+            <div class="field">
+              <label class="lbl" for="c-role">用途</label>
+              <select id="c-role">
+                <option selected>電解質</option>
+                <option>還元剤</option>
+                <option>保護剤 / 分散剤</option>
+                <option>pH 調整</option>
+              </select>
+            </div>
+          </div>
+          <div class="calib" id="c-hint">
+            水和物として認識しました。同じ「炭酸ナトリウム」でも無水は 105.99、十水和物は 286.14 で
+            <b>2.7 倍ちがいます</b>。同じ 10.6 g でもモル数は 0.037 mol にしかなりません。
+          </div>
+          <div class="row" style="margin-top:16px">
+            <button class="btn-save" id="c-save">試薬に追加</button>
+            <button class="btn-cancel" id="c-cancel">やめる</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="stock" id="stock-box">
+        <div class="stock-step">
+          <span class="st">STEP 1 — 母液をつくる</span>
+          <div class="row">
+            <input type="number" id="stock-g" value="10.6" min="0" step="0.1"><span class="unit">g</span>
+            <span class="unit">（含量</span>
+            <input type="number" id="purity" value="100" min="1" max="100" step="0.1" style="max-width:64px"><span class="unit">%）を</span>
+            <input type="number" id="stock-ml" value="100" min="1" step="10"><span class="unit">mL</span>
+            <span class="unit">の精製水に溶かす</span>
+          </div>
+        </div>
+        <div class="arrow">↓</div>
+        <div class="stock-step">
+          <span class="st">STEP 2 — 仕込み水に分注する</span>
+          <div class="row">
+            <input type="number" id="drops" value="5" min="0" step="1"><span class="unit">滴</span>
+            <span class="unit">＝ <span id="dose-ml">0.250</span> mL を</span>
+            <span class="unit" id="target-ml">250 mL</span>
+            <span class="unit">へ</span>
+          </div>
+          <div class="calib">
+            スポイトによって1滴の体積は 0.03〜0.06 mL とばらつきます。20滴の実測体積を入れると全部の計算が補正されます。
+            <div class="row">
+              <span class="unit">20滴 =</span>
+              <input type="number" id="calib-ml" value="1.00" min="0.1" step="0.05"><span class="unit">mL</span>
+              <span class="unit">→ 1滴 <span id="drop-v">0.0500</span> mL</span>
+            </div>
+          </div>
+        </div>
+        <div class="stock-out">
+          母液 <b id="stock-m">1.000</b> mol/L　　仕込み後 <b id="final-mm">1.00</b> mmol/L
+          <div style="margin-top:6px;color:var(--ink2)">実質 <span id="final-mg">26.5</span> mg ／ <span id="final-ppm">106</span> ppm</div>
+        </div>
+      </div>
+
+      <div class="note">水量タブが 250 mL 以外だと最終濃度がずれます。<b>母液は濃度で保存される</b>ので、水量を変えても同じ mmol/L になる滴数を逆算できます（現在の水量なら <b id="need-drops">20</b> 滴）。</div>
+
+      <div class="subhead">還元剤</div>
+      <p>金コロイドでは金属イオンとのモル比が粒径をほぼ決めます。</p>
+      <div class="grid">
+        <div class="field">
+          <label class="lbl" for="red">試薬</label>
+          <select id="red">
+            <option>なし（電解のみ）</option>
+            <option selected>クエン酸三ナトリウム</option>
+            <option>タンニン酸</option>
+            <option>アスコルビン酸</option>
+            <option>水素化ホウ素ナトリウム NaBH₄</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="lbl" for="redmg">秤量</label>
+          <div class="unit-row"><input type="number" id="redmg" value="38" min="0" step="1"><span class="unit">mg</span></div>
+        </div>
+        <div class="field">
+          <label class="lbl" for="cap">保護剤 <span class="jp">/ 分散安定</span></label>
+          <select id="cap">
+            <option selected>なし</option>
+            <option>PVP K30</option>
+            <option>ゼラチン</option>
+            <option>PEG 6000</option>
+          </select>
+        </div>
+        <div class="field">
+          <span class="lbl">投入タイミング</span>
+          <div class="seg" data-seg="timing">
+            <button aria-pressed="true">通電前</button>
+            <button aria-pressed="false">通電中</button>
+            <button aria-pressed="false">通電後</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="inverse">
+        <h3>モル比</h3>
+        <p>還元剤 / 金属イオン。この比が大きいほど粒径は小さくなります。</p>
+        <div class="inverse-out"><span id="molar">3.4</span> : 1<span>クエン酸 Na / Ag</span></div>
+      </div>
+    </section>
+
+    <!-- 04 通電 -->
+    <section class="panel" id="p-power" role="tabpanel">
+      <div class="panel-head">
+        <h2>通電</h2>
+        <p>直流安定化電源の設定と積算時間。ここが ppm の分子になります。</p>
+      </div>
+      <div class="grid">
+        <div class="field">
+          <span class="lbl">モード</span>
+          <div class="seg" data-seg="mode">
+            <button aria-pressed="true">CC 定電流</button>
+            <button aria-pressed="false">CV 定電圧</button>
+          </div>
+        </div>
+        <div class="field">
+          <label class="lbl" for="cur">電流</label>
+          <div class="unit-row"><input type="number" id="cur" value="1.0" min="0.05" step="0.05"><span class="unit">mA</span></div>
+          <div class="chips">
+            <button class="chip" data-cur="0.5">0.5</button>
+            <button class="chip" data-cur="1">1.0</button>
+            <button class="chip" data-cur="3">3.0</button>
+            <button class="chip" data-cur="10">10</button>
+          </div>
+        </div>
+        <div class="field">
+          <label class="lbl" for="volt">電圧（上限）</label>
+          <div class="unit-row"><input type="number" id="volt" value="24" min="1" step="1"><span class="unit">V</span></div>
+        </div>
+        <div class="field">
+          <span class="lbl">通電時間</span>
+          <div class="unit-row">
+            <input type="number" id="hh" value="3" min="0" step="1"><span class="unit">時間</span>
+            <input type="number" id="mm" value="0" min="0" max="59" step="5"><span class="unit">分</span>
+          </div>
+        </div>
+        <div class="field">
+          <label class="lbl" for="eff">電流効率 η</label>
+          <input type="range" id="eff" min="40" max="200" value="92">
+          <div class="range-val"><span id="eff-v">92</span> %　<span class="unit">過去12本から自動補正</span></div>
+        </div>
+        <div class="field">
+          <label class="lbl" for="rev">極性反転</label>
+          <select id="rev">
+            <option>なし</option>
+            <option selected>15分ごと</option>
+            <option>30分ごと</option>
+            <option>60分ごと</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="inverse">
+        <h3>逆算</h3>
+        <p>目標 ppm から必要な通電時間を出します。電流と水量は現在の設定を使用。</p>
+        <div class="field" style="max-width:220px">
+          <label class="lbl" for="target">目標濃度</label>
+          <div class="unit-row"><input type="number" id="target" value="20" min="0.5" step="0.5"><span class="unit">ppm</span></div>
+        </div>
+        <div class="inverse-out"><span id="need">4 時間 58 分</span><span>@ 1.0 mA / 1000 mL</span></div>
+      </div>
+    </section>
+
+    <!-- 05 記録 -->
+    <section class="panel" id="p-log" role="tabpanel">
+      <div class="panel-head">
+        <h2>記録</h2>
+        <p>過去のバッチ。実測を入れるたびに η が補正され、次回の予測が寄っていきます。</p>
+      </div>
+      <table class="log">
+        <thead>
+          <tr><th>日付</th><th>金属</th><th>条件</th><th>理論</th><th>実測 TDS</th><th>色</th><th>判定</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>07-29</td><td class="jp">銀</td><td>1.0 mA × 3:00 / 1L</td><td>12.0 ppm</td><td>9 ppm</td><td class="jp"><span class="swatch" style="background:rgba(200,154,60,.45)"></span>淡黄</td><td><span class="tag ok">良</span></td></tr>
+          <tr><td>07-26</td><td class="jp">金</td><td>0.8 mA × 2:30 / 500mL</td><td>9.8 ppm</td><td>—</td><td class="jp"><span class="swatch" style="background:rgba(163,40,70,.6)"></span>ルビー</td><td><span class="tag ok">良</span></td></tr>
+          <tr><td>07-22</td><td class="jp">銀</td><td>3.0 mA × 1:00 / 1L</td><td>12.1 ppm</td><td>14 ppm</td><td class="jp"><span class="swatch" style="background:rgba(90,80,70,.5)"></span>灰濁</td><td><span class="tag">凝集</span></td></tr>
+          <tr><td>07-18</td><td class="jp">銀</td><td>0.5 mA × 6:00 / 1L</td><td>12.1 ppm</td><td>10 ppm</td><td class="jp"><span class="swatch" style="background:rgba(200,154,60,.3)"></span>ごく淡黄</td><td><span class="tag ok">良</span></td></tr>
+          <tr><td>07-11</td><td class="jp">金</td><td>1.2 mA × 1:40 / 500mL</td><td>8.2 ppm</td><td>—</td><td class="jp"><span class="swatch" style="background:rgba(110,50,140,.55)"></span>紫</td><td><span class="tag">粒径大</span></td></tr>
+        </tbody>
+      </table>
+      <div class="note">07-22 の凝集は電流密度 0.25 mA/cm² が原因の可能性。<b>同条件で 1.0 mA に落として再試行</b>すると比較が取れます。</div>
+    </section>
+
+  </main>
+
+  <!-- readout -->
+  <aside class="readout">
+    <div>
+      <div class="beaker-wrap">
+        <svg width="176" height="196" viewBox="0 0 176 196" role="img" aria-label="ビーカー断面とチンダル現象のプレビュー">
+          <defs>
+            <linearGradient id="beam" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%"  stop-color="#fff" stop-opacity="0"/>
+              <stop offset="35%" stop-color="#fff" stop-opacity=".9"/>
+              <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+            </linearGradient>
+            <clipPath id="jar">
+              <path d="M44 46 L44 168 Q44 178 54 178 L122 178 Q132 178 132 168 L132 46 Z"/>
+            </clipPath>
+          </defs>
+
+          <!-- liquid -->
+          <g clip-path="url(#jar)">
+            <rect id="liquid" x="40" y="78" width="96" height="104" fill="rgba(200,154,60,.28)"/>
+            <!-- tyndall cone -->
+            <polygon id="cone" points="40,112 136,96 136,132" fill="url(#beam)" opacity=".35"/>
+            <rect id="beamline" x="40" y="111" width="96" height="1.6" fill="#fff" opacity=".8"/>
+          </g>
+
+          <!-- jar outline -->
+          <path d="M44 46 L44 168 Q44 178 54 178 L122 178 Q132 178 132 168 L132 46"
+                fill="none" stroke="#A8842C" stroke-width="1.1"/>
+          <line x1="38" y1="46" x2="138" y2="46" stroke="#A8842C" stroke-width="1.1"/>
+          <!-- level -->
+          <line id="level" x1="44" y1="78" x2="132" y2="78" stroke="#A8842C" stroke-width=".7" opacity=".55"/>
+          <!-- graduations -->
+          <g stroke="#A8842C" stroke-width=".6" opacity=".38">
+            <line x1="44" y1="98"  x2="56" y2="98"/>
+            <line x1="44" y1="126" x2="56" y2="126"/>
+            <line x1="44" y1="154" x2="52" y2="154"/>
+          </g>
+          <!-- electrodes -->
+          <line x1="70" y1="18" x2="70" y2="150" stroke="#A8842C" stroke-width="2.4" stroke-linecap="round"/>
+          <line x1="106" y1="18" x2="106" y2="150" stroke="#8E9299" stroke-width="2.4" stroke-linecap="round"/>
+          <text x="70" y="12" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#A8842C">＋</text>
+          <text x="106" y="12" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#8E9299">−</text>
+          <!-- laser -->
+          <circle cx="26" cy="112" r="2.6" fill="#A8842C"/>
+          <line x1="29" y1="112" x2="42" y2="112" stroke="#A8842C" stroke-width=".8" opacity=".6"/>
+        </svg>
+      </div>
+      <div class="tyndall-caption" id="tyndall-cap">TYNDALL PREVIEW</div>
+
+      <div class="big-lbl">理論濃度</div>
+      <div class="big"><span id="ppm">12.3</span><span class="u">ppm</span></div>
+
+      <dl class="stats">
+        <div class="stat"><dt>溶出量</dt><dd><span id="mg">12.3</span> mg</dd></div>
+        <div class="stat"><dt>積算電荷</dt><dd><span id="coul">10.8</span> C</dd></div>
+        <div class="stat"><dt>電流密度</dt><dd><span id="cd2">0.08</span> mA/cm²</dd></div>
+        <div class="stat" id="nm-row"><dt>推定粒径</dt><dd><span id="nm">18</span> nm</dd></div>
+        <div class="stat"><dt>電流効率 η<br><span style="font-size:10px;color:var(--ink3)" id="eta-hint">実測レンジ 88–96%</span></dt><dd><span id="eff2">92</span> %</dd></div>
+      </dl>
+
+      <div class="gauge" id="ph-gauge">
+        <div class="gauge-lbl">水酸化物の析出域</div>
+        <svg width="100%" height="34" viewBox="0 0 272 34" preserveAspectRatio="none" role="img" aria-label="pHに対する析出域">
+          <rect x="0" y="8" width="272" height="10" fill="#F0EEE6"/>
+          <rect id="ph-safe" x="0" y="8" width="136" height="10" fill="#FBF6E9"/>
+          <rect id="ph-bad" x="136" y="8" width="136" height="10" fill="rgba(180,69,60,.22)"/>
+          <line id="ph-mark" x1="136" y1="3" x2="136" y2="23" stroke="#A8842C" stroke-width="1.6"/>
+          <text id="ph-txt" x="136" y="32" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#A8842C">pH 7.0</text>
+        </svg>
+        <div class="gauge-scale"><span>0</span><span>4</span><span>7</span><span>10</span><span>14</span></div>
+      </div>
+
+      <p class="tds-note" id="tds-note">TDS メーターは導電率、つまり<strong>イオン性の銀だけ</strong>を見ています。粒子化が進むほど数値は下がるので、TDS が伸びない＝失敗ではありません。</p>
+    </div>
+  </aside>
+
+</div>
+
+<script>
+const METALS = {
+  Ag:{eq:1.118, rgb:'200,154,60', ion:'Ag⁺',  ph:9.5, eta:[88,96],
+      note:'素直に溶けます。塩化物イオンが入ると AgCl で白濁するので、水道水は避けてください。'},
+  Au:{eq:0.6805,rgb:'163,40,70',  ion:'Au³⁺', ph:3.0, eta:[70,90],
+      note:'電解での溶出は起きにくく、通常は塩化金酸から還元してつくります。'},
+  Cu:{eq:0.3293,rgb:'150,70,45',  ion:'Cu²⁺', ph:5.5, eta:[92,99],
+      note:'pH 5.5 あたりから水酸化銅が出て青白く濁ります。クエン酸で錯体にすると窓が広がります。'},
+  Zn:{eq:0.3388,rgb:'140,145,150',ion:'Zn²⁺', ph:7.0, eta:[85,98],
+      note:'電解でよく溶けます。ただし <b>pH 7 を超えると水酸化亜鉛で白濁</b>します。陰極から水素が出て液全体の pH が上がっていくので、長時間まわすなら pH の実測を挟んでください。両性なので pH 11 以上で再溶解します。'},
+  Mg:{eq:0.1259,rgb:'150,152,155',ion:'Mg²⁺', ph:9.5, eta:[130,200], warn:true,
+      note:'<b>ファラデーの法則が成立しません。</b>Mg は水と直接反応して自己腐食するため（負差効果）、実効効率が 130〜200% と 100% を超えます。理論値は下限としてしか使えません。加えて Mg(OH)₂ の溶解度が極めて低く、電解では白い濁りになりがちです。<b>酸溶解に切り替えることをおすすめします</b>。'},
+  Fe:{eq:0.2894,rgb:'120,85,55',  ion:'Fe²⁺', ph:7.5, eta:[90,99],
+      note:'溶けますが Fe²⁺ は空気中で速やかに Fe³⁺ に酸化し、赤褐色の水酸化鉄が沈みます。密閉と脱気が要ります。'},
+  Mn:{eq:0.2847,rgb:'150,140,120',ion:'Mn²⁺', ph:8.8, eta:[88,97],
+      note:'比較的安定です。酸化されると褐色の二酸化マンガンになるので、こちらも空気との接触を減らしてください。'},
+  Ca:{eq:0,     rgb:'190,190,185',ion:'Ca²⁺', ph:12.5,eta:[0,0], warn:true,
+      note:'<b>金属カルシウムは水と激烈に反応するため電解できません。</b>炭酸カルシウム（卵殻・貝殻など）をクエン酸や酢酸に溶かす経路が現実的です。'},
+  Pt:{eq:0,     rgb:'70,72,75',   ion:'—',    ph:14,  eta:[0,0],
+      note:'不溶性電極です。陰極側や、陽極を溶かしたくない場合の対極に使います。'}
+};
+let mode='colloid', route='ele';
+const $ = id => document.getElementById(id);
+const num = id => parseFloat($(id).value) || 0;
+
+/* tabs */
+document.querySelectorAll('.rail-item').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('.rail-item').forEach(x=>x.setAttribute('aria-selected','false'));
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('on'));
+    b.setAttribute('aria-selected','true');
+    $('p-'+b.dataset.tab).classList.add('on');
+  });
+});
+
+/* segmented */
+document.querySelectorAll('.seg').forEach(seg=>{
+  seg.querySelectorAll('button').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      seg.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed','false'));
+      btn.setAttribute('aria-pressed','true');
+    });
+  });
+});
+
+/* chips */
+document.querySelectorAll('.chip[data-vol]').forEach(c=>
+  c.addEventListener('click',()=>{ $('vol').value=c.dataset.vol; calc(); }));
+document.querySelectorAll('.chip[data-cur]').forEach(c=>
+  c.addEventListener('click',()=>{ $('cur').value=c.dataset.cur; calc(); }));
+
+function calc(){
+  const m   = METALS[$('anode').value];
+  const V   = num('vol')/1000;            // L
+  const I   = num('cur')/1000;            // A
+  const t   = num('hh')*3600 + num('mm')*60;
+  const eta = num('eff')/100;
+  const area= num('area');
+
+  const C   = I*t;
+  const mg  = m.eq * C * eta;
+  const ppm = V>0 ? mg/V : 0;
+  const cd  = area>0 ? (num('cur')/area) : 0;
+
+  $('ppm').textContent  = ppm.toFixed(1);
+  $('mg').textContent   = mg.toFixed(1);
+  $('coul').textContent = C.toFixed(1);
+  $('cd').textContent   = cd.toFixed(2);
+  $('cd2').textContent  = cd.toFixed(2);
+  $('eff2').textContent = num('eff');
+  $('temp-v').textContent = $('temp').value;
+  $('eff-v').textContent  = $('eff').value;
+  $('nm').textContent   = Math.max(4, Math.round(10 + cd*90 + ppm*0.25));
+  $('molar').textContent= (num('redmg')/Math.max(mg,0.1)).toFixed(1);
+
+  /* inverse */
+  const tgt = num('target');
+  const sec = (m.eq*I*eta)>0 ? (tgt*V)/(m.eq*I*eta) : 0;
+  $('need').textContent = sec>0
+    ? `${Math.floor(sec/3600)} 時間 ${Math.round(sec%3600/60)} 分`
+    : '— 不溶性電極';
+
+  /* beaker */
+  const a  = Math.min(.82, ppm/38*.82);
+  $('liquid').setAttribute('fill', `rgba(${m.rgb},${a.toFixed(3)})`);
+  const lv = 178 - Math.min(100, 26 + num('vol')/1000*74);
+  $('liquid').setAttribute('y', lv);
+  $('liquid').setAttribute('height', 182-lv);
+  $('level').setAttribute('y1', lv); $('level').setAttribute('y2', lv);
+  const beam = mode==='ion' ? 0 : Math.min(.95, ppm/22);
+  $('cone').setAttribute('opacity', beam.toFixed(2));
+  $('beamline').setAttribute('opacity', mode==='ion' ? '.12' : (beam*.9).toFixed(2));
+
+  /* advisory */
+  const ad=$('advis');
+  ad.classList.toggle('warn', !!m.warn);
+  ad.querySelector('.ah').textContent = m.warn ? 'CAUTION' : 'NOTE';
+  $('advis-t').innerHTML = m.note;
+
+  /* pH gauge */
+  const x = m.ph/14*272;
+  $('ph-safe').setAttribute('width', x.toFixed(0));
+  $('ph-bad').setAttribute('x', x.toFixed(0));
+  $('ph-bad').setAttribute('width', (272-x).toFixed(0));
+  $('ph-mark').setAttribute('x1', x.toFixed(0));
+  $('ph-mark').setAttribute('x2', x.toFixed(0));
+  $('ph-txt').setAttribute('x', Math.min(250, Math.max(22, x)).toFixed(0));
+  $('ph-txt').textContent = m.eq>0 || m.ph<14 ? 'pH '+m.ph.toFixed(1) : '—';
+
+  /* mode-dependent copy */
+  $('tyndall-cap').textContent = mode==='ion' ? 'イオン溶液 — チンダル現象なし' : 'TYNDALL PREVIEW';
+  $('nm-row').classList.toggle('hidden', mode==='ion');
+  $('ph-gauge').classList.toggle('hidden', mode==='colloid');
+  $('tds-note').innerHTML = mode==='ion'
+    ? 'イオン溶液は TDS がそのまま濃度に対応します。<strong>濁りが出たら析出</strong>のサインなので、pH を下げるか錯化剤を足してください。'
+    : 'TDS メーターは導電率、つまり<strong>イオン性の金属だけ</strong>を見ています。粒子化が進むほど数値は下がるので、TDS が伸びない＝失敗ではありません。';
+  $('eta-hint').textContent = m.eta[1]>0 ? `実測レンジ ${m.eta[0]}–${m.eta[1]}%` : '—';
+}
+
+/* mode switch */
+document.querySelectorAll('.mode-sw button').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('.mode-sw button').forEach(x=>x.setAttribute('aria-pressed','false'));
+    b.setAttribute('aria-pressed','true');
+    mode=b.dataset.pm;
+    calc();
+  });
+});
+document.querySelectorAll('.seg[data-seg="route"] button').forEach(b=>{
+  b.addEventListener('click',()=>{ route=b.dataset.rt; calc(); });
+});
+
+/* ---- 化学式パーサー ---- */
+const AW={H:1.008,Li:6.94,Be:9.012,B:10.81,C:12.011,N:14.007,O:15.999,F:18.998,Na:22.990,
+Mg:24.305,Al:26.982,Si:28.085,P:30.974,S:32.06,Cl:35.45,K:39.098,Ca:40.078,Ti:47.867,
+V:50.942,Cr:51.996,Mn:54.938,Fe:55.845,Co:58.933,Ni:58.693,Cu:63.546,Zn:65.38,As:74.922,
+Se:78.971,Br:79.904,Rb:85.468,Sr:87.62,Mo:95.95,Ag:107.868,Cd:112.414,Sn:118.710,I:126.904,
+Cs:132.905,Ba:137.327,W:183.84,Pt:195.084,Au:196.967,Hg:200.592,Pb:207.2,Bi:208.980};
+
+function parseSeg(s){
+  let i=0;
+  const numAt=()=>{let d='';while(i<s.length&&/[0-9.]/.test(s[i])){d+=s[i];i++;}return d?parseFloat(d):1;};
+  function group(){
+    let sum=0;
+    while(i<s.length){
+      const c=s[i];
+      if(c==='('||c==='['){ i++; const inner=group(); i++; sum+=inner*numAt(); }
+      else if(c===')'||c===']') break;
+      else if(/[A-Z]/.test(c)){
+        let el=c; i++;
+        while(i<s.length&&/[a-z]/.test(s[i])){ el+=s[i]; i++; }
+        if(!(el in AW)) throw new Error('未知の元素記号「'+el+'」');
+        sum+=AW[el]*numAt();
+      } else i++;
+    }
+    return sum;
+  }
+  return group();
+}
+function formulaMW(f){
+  const parts=f.replace(/\s/g,'').split(/[·*.•・]/);
+  let total=0;
+  for(let p of parts){
+    if(!p) continue;
+    let mult=1;
+    const m=p.match(/^(\d+)([A-Z].*)$/);
+    if(m){ mult=parseInt(m[1]); p=m[2]; }
+    total+=mult*parseSeg(p);
+  }
+  return total;
+}
+
+let customMW=286.14;
+function checkFormula(){
+  const f=$('c-formula').value.trim();
+  const box=$('c-fx');
+  try{
+    const w=formulaMW(f);
+    if(!(w>0)) throw new Error('式を入力してください');
+    customMW=w;
+    box.className='fx'; box.textContent='分子量 '+w.toFixed(2);
+    $('c-hint').classList.toggle('hidden', !/H2O/i.test(f));
+  }catch(e){
+    box.className='fx err'; box.textContent=e.message;
+  }
+}
+$('c-formula').addEventListener('input',checkFormula);
+checkFormula();
+
+$('salt').addEventListener('change',()=>{
+  const custom=$('salt').value==='custom';
+  $('custom-box').classList.toggle('hidden',!custom);
+  $('stock-box').classList.toggle('hidden',custom);
+});
+$('c-cancel').addEventListener('click',()=>{
+  $('salt').value='105.99';
+  $('custom-box').classList.add('hidden');
+  $('stock-box').classList.remove('hidden');
+  stock();
+});
+$('c-save').addEventListener('click',()=>{
+  const name=$('c-name').value.trim()||'登録した試薬';
+  const opt=document.createElement('option');
+  opt.value=customMW.toFixed(2);
+  opt.textContent=name+' '+$('c-formula').value.trim()+' — '+customMW.toFixed(2);
+  $('salt').insertBefore(opt,$('salt').querySelector('option[value="custom"]'));
+  $('salt').value=opt.value;
+  $('purity').value=$('c-purity').value;
+  $('custom-box').classList.add('hidden');
+  $('stock-box').classList.remove('hidden');
+  stock();
+});
+
+/* ---- 母液 / 滴下 ---- */
+function stock(){
+  const mw    = parseFloat($('salt').value) || 0;
+  const g     = num('stock-g') * (num('purity')/100);
+  const sml   = num('stock-ml');
+  const dropV = num('calib-ml')/20;
+  const dose  = num('drops')*dropV;
+  const V     = num('vol');
+
+  const molar = (mw>0 && sml>0) ? (g/mw)/(sml/1000) : 0;   // mol/L
+  const mmol  = molar*dose;                                 // mmol
+  const finalM= V>0 ? mmol/(V/1000) : 0;                    // mmol/L
+  const mg    = mmol*mw;
+
+  $('drop-v').textContent   = dropV.toFixed(4);
+  $('dose-ml').textContent  = dose.toFixed(3);
+  $('target-ml').textContent= V.toFixed(0)+' mL';
+  $('stock-m').textContent  = molar.toFixed(3);
+  $('final-mm').textContent = finalM.toFixed(2);
+  $('final-mg').textContent = mg.toFixed(1);
+  $('final-ppm').textContent= V>0 ? (mg/(V/1000)).toFixed(0) : '0';
+
+  /* 1 mmol/L を保つのに必要な滴数 */
+  const need = (molar>0 && dropV>0) ? (1.0*(V/1000))/molar/dropV : 0;
+  $('need-drops').textContent = need>0 ? need.toFixed(0) : '—';
+}
+
+document.querySelectorAll('.seg[data-seg="addmode"] button').forEach(b=>{
+  b.addEventListener('click',()=>{
+    const s = b.dataset.mode==='stock';
+    $('stock-box').classList.toggle('hidden', !s);
+    $('direct-box').classList.toggle('hidden', s);
+  });
+});
+$('direct-box').classList.add('hidden');
+
+['salt','stock-g','stock-ml','drops','calib-ml','salt-mg','purity']
+  .forEach(id=>{ $(id).addEventListener('input',stock); $(id).addEventListener('change',stock); });
+
+['vol','tds0','temp','anode','area','gap','cur','volt','hh','mm','eff','target','redmg']
+  .forEach(id=>{ $(id).addEventListener('input',()=>{calc();stock();}); $(id).addEventListener('change',()=>{calc();stock();}); });
+
+calc(); stock();
+</script>
+</body>
+</html>
