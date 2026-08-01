@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  activeElapsedAtTime,
   activeElapsedMs,
   addMark,
+  energyWh,
   averageCurrentMa,
   chartSeries,
   computeMeasured,
@@ -198,6 +200,21 @@ describe('派生値', () => {
     expect(coulombsAt(s, T0 + 5 * MIN)).toBeCloseTo(0.3, 9)
     expect(coulombsAt(s, T0 + 10 * MIN)).toBeCloseTo(0.6, 9)
     expect(coulombsAt(s, T0 + 15 * MIN)).toBeCloseTo(0.6 + 0.6, 9)
+  })
+
+  it('activeElapsedAtTime: 停止を挟んだ任意時点の通電経過', () => {
+    let s = createSession('s1', 'b1', T0, 1.0)
+    s = pauseSession(s, T0 + 10 * MIN)
+    s = resumeSession(s, T0 + 30 * MIN)
+    expect(activeElapsedAtTime(s, T0 + 5 * MIN)).toBe(5 * MIN)
+    expect(activeElapsedAtTime(s, T0 + 20 * MIN)).toBe(10 * MIN) // 停止中は進まない
+    expect(activeElapsedAtTime(s, T0 + 35 * MIN)).toBe(15 * MIN)
+  })
+
+  it('energyWh: V × C / 3600', () => {
+    const s = createSession('s1', 'b1', T0, 1.0, 24)
+    // 1 mA × 3600 s = 3.6 C, × 24 V = 86.4 J = 0.024 Wh
+    expect(energyWh(s, T0 + HOUR)).toBeCloseTo(0.024, 9)
   })
 
   it('平均電流は電荷 / 通電時間', () => {

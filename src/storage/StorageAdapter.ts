@@ -1,4 +1,5 @@
 import type { Batch, Pipette, Reagent, Stock } from '../core/model'
+import type { Session } from '../core/session'
 
 /**
  * 永続化の抽象。Phase 1 は IndexedDB のみだが、
@@ -19,4 +20,8 @@ export interface StorageAdapter {
 
   listPipettes(): Promise<Pipette[]>
   savePipette(pipette: Pipette): Promise<void>
+
+  listSessions(): Promise<Session[]>
+  saveSession(session: Session): Promise<void>
+  deleteSession(id: string): Promise<void>
 }

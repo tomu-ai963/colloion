@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import type { Additive } from '../core/model'
 import { REDUCERS, derive } from '../store/derive'
 import { useAppStore } from '../store/appStore'
+import { useRunStore } from '../store/runStore'
 import s from './App.module.css'
+import { RecoveryDialog } from './run/RecoveryDialog'
+import { RunScreen } from './run/RunScreen'
 import { AdditivePanel } from './panels/AdditivePanel'
 import { ElectrodePanel } from './panels/ElectrodePanel'
 import { LogPanel } from './panels/LogPanel'
@@ -25,8 +28,14 @@ export function App() {
   const [tab, setTab] = useState<TabId>('water')
   const railRef = useRef<HTMLElement>(null)
 
+  const runActive = useRunStore((st) => st.session !== null && st.batch !== null)
+  const hasRecovery = useRunStore((st) => st.recovery !== null)
+
   useEffect(() => {
-    void useAppStore.getState().init()
+    void useAppStore
+      .getState()
+      .init()
+      .then(() => useRunStore.getState().checkRecovery())
   }, [])
 
   const derived = useMemo(
@@ -91,8 +100,8 @@ export function App() {
     return list
   }
 
-  const save = async () => {
-    await store.saveBatch(
+  const persistBatch = async () => {
+    const batch = await store.saveBatch(
       {
         mg: derived.mg,
         ppm: derived.ppm,
@@ -104,7 +113,18 @@ export function App() {
     if (store.additive.method === 'stock' && store.additive.activeStockId) {
       await store.consumeStock(store.additive.activeStockId, derived.doseMl)
     }
+    return batch
+  }
+
+  const save = async () => {
+    await persistBatch()
     setTab('log')
+  }
+
+  // 通電を開始: 現在の条件をバッチとして保存し、そのバッチでセッションを開く
+  const startRun = async () => {
+    const batch = await persistBatch()
+    await useRunStore.getState().start(batch)
   }
 
   // 矢印キーでレールを移動できるように（tablist のキーボード操作）
@@ -147,7 +167,10 @@ export function App() {
           </button>
         </div>
         <div className={s.batchId}>BATCH&nbsp;&nbsp;{store.label}</div>
-        <button type="button" className={s.btnSolid} onClick={() => void save()}>
+        <button type="button" className={s.btnSolid} onClick={() => void startRun()}>
+          通電を開始
+        </button>
+        <button type="button" className={s.btnGhost} onClick={() => void save()}>
           バッチを保存
         </button>
         <button type="button" className={s.btnGhost} onClick={() => store.newBatch()}>
@@ -197,6 +220,9 @@ export function App() {
 
         <Readout mode={store.mode} derived={derived} eta={store.power.eta} volumeMl={store.water.volumeMl} />
       </div>
+
+      {hasRecovery && <RecoveryDialog />}
+      {runActive && <RunScreen onExit={() => setTab('log')} />}
     </>
   )
 }

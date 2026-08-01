@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type { Batch, Pipette, Reagent, Stock } from '../core/model'
+import type { Session } from '../core/session'
 import type { StorageAdapter } from './StorageAdapter'
 
 interface ColloionDB extends DBSchema {
@@ -7,18 +8,24 @@ interface ColloionDB extends DBSchema {
   reagents: { key: string; value: Reagent }
   stocks: { key: string; value: Stock }
   pipettes: { key: string; value: Pipette }
+  sessions: { key: string; value: Session }
 }
 
 export class IndexedDbAdapter implements StorageAdapter {
   private dbPromise: Promise<IDBPDatabase<ColloionDB>>
 
   constructor(dbName = 'colloion') {
-    this.dbPromise = openDB<ColloionDB>(dbName, 1, {
-      upgrade(db) {
-        db.createObjectStore('batches', { keyPath: 'id' })
-        db.createObjectStore('reagents', { keyPath: 'id' })
-        db.createObjectStore('stocks', { keyPath: 'id' })
-        db.createObjectStore('pipettes', { keyPath: 'id' })
+    this.dbPromise = openDB<ColloionDB>(dbName, 2, {
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
+          db.createObjectStore('batches', { keyPath: 'id' })
+          db.createObjectStore('reagents', { keyPath: 'id' })
+          db.createObjectStore('stocks', { keyPath: 'id' })
+          db.createObjectStore('pipettes', { keyPath: 'id' })
+        }
+        if (oldVersion < 2) {
+          db.createObjectStore('sessions', { keyPath: 'id' })
+        }
       },
     })
   }
@@ -60,5 +67,16 @@ export class IndexedDbAdapter implements StorageAdapter {
   }
   async savePipette(pipette: Pipette) {
     await (await this.dbPromise).put('pipettes', pipette)
+  }
+
+  async listSessions() {
+    const all = await (await this.dbPromise).getAll('sessions')
+    return all.sort((a, b) => b.startedAt - a.startedAt)
+  }
+  async saveSession(session: Session) {
+    await (await this.dbPromise).put('sessions', session)
+  }
+  async deleteSession(id: string) {
+    await (await this.dbPromise).delete('sessions', id)
   }
 }

@@ -1,4 +1,5 @@
 import type { Batch, Pipette, Reagent, Stock } from '../core/model'
+import type { Session } from '../core/session'
 import type { StorageAdapter } from './StorageAdapter'
 
 /** テスト・IndexedDB 非対応環境向けのインメモリ実装 */
@@ -7,6 +8,7 @@ export class MemoryAdapter implements StorageAdapter {
   private reagents = new Map<string, Reagent>()
   private stocks = new Map<string, Stock>()
   private pipettes = new Map<string, Pipette>()
+  private sessions = new Map<string, Session>()
 
   async listBatches() {
     return [...this.batches.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -43,5 +45,15 @@ export class MemoryAdapter implements StorageAdapter {
   }
   async savePipette(pipette: Pipette) {
     this.pipettes.set(pipette.id, structuredClone(pipette))
+  }
+
+  async listSessions() {
+    return [...this.sessions.values()].sort((a, b) => b.startedAt - a.startedAt)
+  }
+  async saveSession(session: Session) {
+    this.sessions.set(session.id, structuredClone(session))
+  }
+  async deleteSession(id: string) {
+    this.sessions.delete(id)
   }
 }

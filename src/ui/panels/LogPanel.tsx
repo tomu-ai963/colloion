@@ -27,6 +27,7 @@ function toCsv(batches: Batch[]): string {
   const header = [
     'label', 'createdAt', 'mode', 'anode', 'volumeMl', 'currentMa', 'durationSec',
     'etaPct', 'theoreticalMg', 'theoreticalPpm', 'coulombs', 'currentDensity',
+    'sessionCoulombs', 'sessionPpm',
     'measuredTds', 'measuredPh', 'colorNote', 'verdict',
   ]
   const rows = batches.map((b) =>
@@ -35,6 +36,8 @@ function toCsv(batches: Batch[]): string {
       b.power.currentMa, b.power.durationSec, b.power.eta,
       b.computed.mg.toFixed(2), b.computed.ppm.toFixed(2),
       b.computed.coulombs.toFixed(2), b.computed.currentDensity.toFixed(3),
+      b.measured ? b.measured.coulombs.toFixed(2) : '',
+      b.measured ? b.measured.ppm.toFixed(2) : '',
       b.result?.measuredTds ?? '', b.result?.measuredPh ?? '',
       b.result?.colorNote ?? '', b.result?.verdict ?? '',
     ]
@@ -94,6 +97,11 @@ export function LogPanel() {
                       {b.computed.ppm.toFixed(1)} ppm
                       {!metal.faradayValid && metal.symbol === 'Mg' && (
                         <span className={c.unit}>（下限）</span>
+                      )}
+                      {b.measured && (
+                        <div className={c.unit}>
+                          積算 {b.measured.ppm.toFixed(1)} ppm（η {b.measured.etaPct}% 仮）
+                        </div>
                       )}
                     </td>
                     <td>

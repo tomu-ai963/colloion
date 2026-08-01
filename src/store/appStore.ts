@@ -6,6 +6,7 @@ import type {
   Batch,
   BatchResult,
   ElectrodeConfig,
+  MeasuredSnapshot,
   Mode,
   Pipette,
   PowerConfig,
@@ -14,10 +15,10 @@ import type {
   WaterConfig,
 } from '../core/model'
 import { METALS, defaultEta } from '../core/metals'
-import { createStorage } from '../storage'
+import { getStorage } from '../storage'
 import { seedReagents } from '../storage/seed'
 
-const storage = createStorage()
+const storage = getStorage()
 
 const newId = (): string =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -79,6 +80,8 @@ export interface AppState {
   newBatch(): void
   saveBatch(computed: Batch['computed'], additives: Additive[]): Promise<Batch>
   updateResult(id: string, result: BatchResult): Promise<void>
+  /** Run Mode 終了時: 実測積算ベースの値を追記する（computed は不変） */
+  applyMeasured(id: string, measured: MeasuredSnapshot): Promise<void>
   deleteBatch(id: string): Promise<void>
 
   addReagent(reagent: Omit<Reagent, 'id'>): Promise<Reagent>
@@ -239,6 +242,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     const batch = get().batches.find((b) => b.id === id)
     if (!batch) return
     const updated = { ...batch, result: { ...batch.result, ...result } }
+    await storage.saveBatch(updated)
+    set((s) => ({ batches: s.batches.map((b) => (b.id === id ? updated : b)) }))
+  },
+
+  async applyMeasured(id, measured) {
+    const batch = get().batches.find((b) => b.id === id)
+    if (!batch) return
+    const updated = { ...batch, measured }
     await storage.saveBatch(updated)
     set((s) => ({ batches: s.batches.map((b) => (b.id === id ? updated : b)) }))
   },

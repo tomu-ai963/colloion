@@ -73,6 +73,19 @@ export interface ComputedSnapshot {
   currentDensity: number
 }
 
+/**
+ * 通電セッションの積算電荷に基づく実測ベースの値。
+ * computed（設定値ベースの理論値）は上書きせず、両方を残して η 補正の材料にする。
+ * etaPct はセッション終了時点の仮値（実測 TDS は終了後に測るため確定ではない）。
+ */
+export interface MeasuredSnapshot {
+  coulombs: number
+  mg: number
+  ppm: number
+  etaPct: number
+  sessionId: string
+}
+
 export interface Batch {
   id: string
   /** 表示用バッチ番号 例: 2026-0801-01 */
@@ -85,6 +98,8 @@ export interface Batch {
   power: PowerConfig
   result?: BatchResult
   computed: ComputedSnapshot
+  /** Run Mode のセッション積算から書き戻される（computed は不変のまま） */
+  measured?: MeasuredSnapshot
 }
 
 export interface Reagent {

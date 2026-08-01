@@ -284,6 +284,24 @@ export function coulombsAt(session: Session, tMs: number): number {
   return sum
 }
 
+/** 任意の時刻 tMs までの通電経過 [ms]（マークのグラフ位置決め用） */
+export function activeElapsedAtTime(session: Session, tMs: number): number {
+  let acc = 0
+  for (const seg of session.segments) {
+    if (tMs <= seg.startedAt) break
+    acc += Math.min(seg.endedAt ?? tMs, tMs) - seg.startedAt
+  }
+  return acc
+}
+
+/** 投入電力量 [Wh]。電圧未記録の区間は 0 として扱う（V × C = J, /3600 で Wh） */
+export function energyWh(session: Session, nowMs: number): number {
+  return session.segments.reduce(
+    (sum, seg) => sum + (seg.voltageV ?? 0) * segmentCoulombs(seg, nowMs),
+    0,
+  ) / 3600
+}
+
 /** これまでに実施された極性反転の回数（reversal 区間の数） */
 export function reversalCount(session: Session): number {
   return session.segments.filter((s) => s.reason === 'reversal').length

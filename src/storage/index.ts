@@ -9,3 +9,11 @@ export function createStorage(): StorageAdapter {
   if (typeof indexedDB === 'undefined') return new MemoryAdapter()
   return new IndexedDbAdapter()
 }
+
+let instance: StorageAdapter | undefined
+
+/** アプリ全体で共有するシングルトン（appStore と runStore が同じ DB を見る） */
+export function getStorage(): StorageAdapter {
+  instance ??= createStorage()
+  return instance
+}
