@@ -3,6 +3,7 @@ import type { Additive } from '../core/model'
 import { REDUCERS, derive } from '../store/derive'
 import { useAppStore } from '../store/appStore'
 import { useRunStore } from '../store/runStore'
+import { useAuthStore } from '../auth/store'
 import s from './App.module.css'
 import { RecoveryDialog } from './run/RecoveryDialog'
 import { RunScreen } from './run/RunScreen'
@@ -36,6 +37,8 @@ export function App() {
       .getState()
       .init()
       .then(() => useRunStore.getState().checkRecovery())
+      // 同期サーバーがあればセッションを確認し、ログイン済みなら同期を始める
+      .then(() => useAuthStore.getState().init())
   }, [])
 
   const derived = useMemo(

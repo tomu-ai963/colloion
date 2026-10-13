@@ -8,6 +8,7 @@
  *   GET  /api/health
  *   GET  /api/sync/pull?since=<rev>
  *   POST /api/sync/push   { changes: PushChange[] }
+ *   *    /api/auth/*      Neon Auth への中継（worker/authProxy.ts。同一オリジン専用で CORS は付けない）
  */
 
 import { MAX_PUSH_BYTES, PULL_PAGE_LIMIT } from '../src/sync/protocol'
@@ -18,13 +19,20 @@ import {
   Unauthorized,
   type AuthConfig,
 } from './auth'
+import { AuthProxyError, proxyAuth } from './authProxy'
 import type { D1Like } from './db'
+import { RateLimited } from './rateLimit'
 import { pull, push } from './sync'
 import { BadRequest, parsePushBody, parseSince } from './validate'
 
 export interface Env {
   DB: D1Like
-  /** Neon Managed Better Auth の URL（公開情報）。未設定なら同期 API は 503 */
+  /**
+   * Neon Managed Better Auth の URL。未設定なら同期 API・認証は 503。
+   * 本番は `wrangler secret put`、ローカルは .dev.vars で渡す（wrangler.jsonc の vars には書かない）。
+   * 秘密鍵ではないが、中継しているのでブラウザには見えず、公開リポジトリに載せると
+   * Neon の認証 API を直接叩く入口（中継のレート制限を迂回できる）を晒すことになる
+   */
   NEON_AUTH_BASE_URL?: string
   /** CORS を許すオリジン（カンマ区切り）。本番は同一オリジンなので空 */
   ALLOWED_ORIGINS?: string
@@ -34,6 +42,8 @@ export interface Env {
 /** テストで認証設定を差し替えるための口（本番は NEON_AUTH_BASE_URL から作る） */
 export interface Deps {
   authConfig?: AuthConfig
+  /** 認証の中継が上流（Neon）を叩くときの fetch */
+  fetch?: typeof fetch
 }
 
 const json = (status: number, body: unknown, headers: HeadersInit = {}): Response =>
@@ -126,6 +136,14 @@ export async function handle(request: Request, env: Env, deps: Deps = {}): Promi
     return env.ASSETS ? env.ASSETS.fetch(request) : json(404, { error: 'not_found' })
   }
 
+  if (url.pathname.startsWith('/api/auth/')) {
+    try {
+      return await proxyAuth(request, env, url.pathname.slice('/api/auth'.length), deps.fetch)
+    } catch (e) {
+      return errorResponse(e)
+    }
+  }
+
   const cors = corsHeaders(request, env)
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: Object.keys(cors).length > 0 ? 204 : 403, headers: cors })
@@ -135,19 +153,32 @@ export async function handle(request: Request, env: Env, deps: Deps = {}): Promi
   try {
     res = await handleApi(request, env, url, deps)
   } catch (e) {
-    if (e instanceof Unauthorized) {
-      res = json(401, { error: 'unauthorized' }, { 'WWW-Authenticate': 'Bearer' })
-    } else if (e instanceof AuthUnavailable) {
-      res = json(503, { error: 'auth_unavailable' }, { 'Retry-After': '30' })
-    } else if (e instanceof BadRequest) {
-      res = json(e.status, { error: 'bad_request', message: e.message })
-    } else {
-      console.error('unhandled', e instanceof Error ? e.message : e)
-      res = json(500, { error: 'internal' })
-    }
+    res = errorResponse(e)
   }
   for (const [k, v] of Object.entries(cors)) res.headers.set(k, v)
   return res
+}
+
+function errorResponse(e: unknown): Response {
+  if (e instanceof Unauthorized) {
+    return json(401, { error: 'unauthorized' }, { 'WWW-Authenticate': 'Bearer' })
+  }
+  if (e instanceof AuthUnavailable) {
+    return json(503, { error: 'auth_unavailable' }, { 'Retry-After': '30' })
+  }
+  if (e instanceof RateLimited) {
+    return json(429, { error: 'rate_limited' }, { 'Retry-After': String(e.retryAfterSec) })
+  }
+  if (e instanceof AuthProxyError) {
+    const error = { 400: 'bad_request', 404: 'not_found', 405: 'method_not_allowed', 503: 'auth_not_configured' }
+    return json(e.status, { error: error[e.status] })
+  }
+  if (e instanceof BadRequest) {
+    return json(e.status, { error: 'bad_request', message: e.message })
+  }
+  // 中継先（Neon）への通信失敗も含む。メッセージには URL が入りうるので種類だけを残す
+  console.error('unhandled', e instanceof Error ? e.name : typeof e)
+  return json(500, { error: 'internal' })
 }
 
 export default {

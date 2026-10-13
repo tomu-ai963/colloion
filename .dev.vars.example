@@ -1,4 +1,8 @@
 # ローカル開発（wrangler dev）用。コピーして .dev.vars にする（.dev.vars は gitignore 済み）。
-# ここに入るのは公開情報だけ。この Worker は秘密情報を持たない。
-ALLOWED_ORIGINS=http://localhost:5173
+#
+# NEON_AUTH_BASE_URL: Neon コンソールの Auth に表示される URL（https://ep-….neon.tech/<db>/auth）。
+#   秘密鍵ではないが、公開リポジトリには載せない（worker/index.ts の Env の注記を参照）。
+#   本番は `wrangler secret put NEON_AUTH_BASE_URL`。
 NEON_AUTH_BASE_URL=
+# vite の開発サーバーは /api を wrangler dev に中継するので、通常は空でよい
+ALLOWED_ORIGINS=
