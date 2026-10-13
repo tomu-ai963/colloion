@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { dropVolume, finalConcentration, requiredDrops, stockMolarity } from './stock'
+import {
+  dropVolume,
+  finalConcentration,
+  requiredDrops,
+  stockMolarity,
+  stockRemainingMl,
+} from './stock'
 import { molecularWeight } from './formula'
 
 const MW_NA2CO3 = molecularWeight('Na2CO3') // 105.99
@@ -61,5 +67,22 @@ describe('スポイトのキャリブレーション', () => {
   it('負値・NaN は 0', () => {
     expect(dropVolume(-1)).toBe(0)
     expect(dropVolume(NaN)).toBe(0)
+  })
+})
+
+describe('stockRemainingMl — 使用記録から残量を求める', () => {
+  it('調製量から使用量の合計を引く', () => {
+    const usages = [
+      { id: 'u1', at: 1, doseMl: 0.25 },
+      { id: 'u2', at: 2, doseMl: 0.5 },
+    ]
+    expect(stockRemainingMl({ initialVolumeMl: 100, usages })).toBeCloseTo(99.25, 10)
+  })
+
+  it('使い切っても負にならない・不正値は無視', () => {
+    expect(stockRemainingMl({ initialVolumeMl: 1, usages: [{ id: 'u', at: 1, doseMl: 5 }] })).toBe(0)
+    expect(
+      stockRemainingMl({ initialVolumeMl: 10, usages: [{ id: 'u', at: 1, doseMl: Number.NaN }] }),
+    ).toBe(10)
   })
 })

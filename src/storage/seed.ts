@@ -4,6 +4,8 @@ import type { Reagent } from '../core/model'
 /**
  * 初期シード試薬。あくまで初期値で、ユーザー登録（化学式から）がメイン。
  * mw はハードコードせずパーサーから導出する。
+ * ID 固定・updatedAt = 0 なので、各端末で作られても同期で同じレコードとして扱われ、
+ * どの実データにも負ける。
  */
 export function seedReagents(): Reagent[] {
   const def = (
@@ -12,7 +14,15 @@ export function seedReagents(): Reagent[] {
     formula: string,
     role: Reagent['role'],
     purityPct = 100,
-  ): Reagent => ({ id, name, formula, mw: molecularWeight(formula), role, purityPct })
+  ): Reagent => ({
+    id,
+    name,
+    formula,
+    mw: molecularWeight(formula),
+    role,
+    purityPct,
+    updatedAt: 0,
+  })
 
   return [
     def('seed-na2co3', '炭酸ナトリウム', 'Na2CO3', '電解質'),

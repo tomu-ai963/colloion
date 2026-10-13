@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Batch } from '../core/model'
+import { createSession } from '../core/session'
 import { getStorage } from '../storage'
 import { useAppStore } from './appStore'
 import { useRunStore } from './runStore'
@@ -11,6 +12,7 @@ const makeBatch = (id = 'batch-1'): Batch => ({
   id,
   label: '2026-0801-01',
   createdAt: new Date(T0).toISOString(),
+  updatedAt: 0,
   mode: 'colloid',
   water: { volumeMl: 1000, type: '蒸留水', initialTds: 1, tempC: 24 },
   electrode: { anode: 'Ag', cathode: '銀 Ag', purity: '99.99%', areaCm2: 12, gapMm: 35, route: 'electrolysis' },
@@ -103,6 +105,16 @@ describe('runStore: クラッシュ復帰', () => {
     expect(sessions.find((s) => s.batchId === 'rb-3')!.status).toBe('completed')
     const updated = useAppStore.getState().batches.find((b) => b.id === 'rb-3')!
     expect(updated.measured).toBeDefined()
+  })
+
+  it('同期で届いた他端末の通電中セッションには復帰ダイアログを出さない', async () => {
+    const batch = makeBatch('rb-5')
+    await getStorage().saveBatch(batch)
+    useAppStore.setState({ batches: [batch] })
+    await getStorage().saveSession(createSession('other-s', 'rb-5', 'other-device', T0, 1.0))
+
+    await useRunStore.getState().checkRecovery()
+    expect(useRunStore.getState().recovery).toBeNull()
   })
 
   it('「止まっていた扱い」で復帰すると空白が電荷に入らない', async () => {

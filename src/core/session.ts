@@ -49,6 +49,16 @@ export type SessionStatus = 'running' | 'paused' | 'completed' | 'aborted'
 export interface Session {
   id: string
   batchId: string
+  /**
+   * セッションを開いた端末。書き込めるのはこの端末だけで、
+   * クラッシュ復帰の対象も自端末のセッションに限る（同期で届いた他端末の
+   * 通電中セッションに復帰ダイアログを出さないため）
+   */
+  deviceId: string
+  /** 削除の墓標 [epoch ms]（Syncable と同じ意味） */
+  deletedAt?: number
+  /** サーバーが振る通し番号。未同期なら無い */
+  rev?: number
   /** epoch ms */
   startedAt: number
   endedAt?: number
@@ -71,6 +81,7 @@ const msToCoulombs = (currentMa: number, ms: number): number =>
 export function createSession(
   id: string,
   batchId: string,
+  deviceId: string,
   nowMs: number,
   currentMa: number,
   voltageV?: number,
@@ -78,6 +89,7 @@ export function createSession(
   return {
     id,
     batchId,
+    deviceId,
     startedAt: nowMs,
     status: 'running',
     segments: [

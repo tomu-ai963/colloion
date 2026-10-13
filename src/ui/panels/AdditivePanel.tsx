@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { FormulaError, isHydrate, molecularWeight } from '../../core/formula'
 import type { AdditiveRole, AdditiveTiming } from '../../core/model'
+import { stockRemainingMl } from '../../core/stock'
 import { REDUCERS, type Derived } from '../../store/derive'
 import { useAppStore } from '../../store/appStore'
 import { Field } from '../components/Field'
@@ -310,7 +311,7 @@ export function AdditivePanel({ derived }: { derived: Derived }) {
                     <span className={c.tdJp}>{reagentName(st.reagentId)}</span>
                     <span>{st.molarity.toFixed(3)} mol/L</span>
                     <span>調製から {daysSince(st.preparedAt)} 日</span>
-                    <span>残 {st.volumeRemainingMl.toFixed(1)} mL</span>
+                    <span>残 {stockRemainingMl(st).toFixed(1)} mL</span>
                     <button type="button" className={c.linkBtn} onClick={() => applyStock(st)}>
                       使う
                     </button>

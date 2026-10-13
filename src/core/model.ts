@@ -1,5 +1,17 @@
 import type { MetalSymbol, Route } from './metals'
 
+/**
+ * 同期対象のレコードが共通して持つメタ情報（Phase 3）。
+ * - updatedAt: 最終更新 [epoch ms]。マージで新しい方を選ぶのに使う
+ * - deletedAt: 削除の墓標。物理削除すると他端末に削除が伝わらないため、印を残す
+ * - rev: サーバーが振る通し番号。未同期のレコードには無い
+ */
+export interface Syncable {
+  updatedAt: number
+  deletedAt?: number
+  rev?: number
+}
+
 /** コロイド（粒子分散）かイオン溶液か */
 export type Mode = 'colloid' | 'ion'
 
@@ -86,7 +98,7 @@ export interface MeasuredSnapshot {
   sessionId: string
 }
 
-export interface Batch {
+export interface Batch extends Syncable {
   id: string
   /** 表示用バッチ番号 例: 2026-0801-01 */
   label: string
@@ -102,7 +114,7 @@ export interface Batch {
   measured?: MeasuredSnapshot
 }
 
-export interface Reagent {
+export interface Reagent extends Syncable {
   id: string
   name: string
   formula: string
@@ -111,17 +123,28 @@ export interface Reagent {
   role: AdditiveRole
 }
 
-export interface Stock {
+/** 母液の使用記録。追記のみで、端末間のマージは id による和集合 */
+export interface StockUsage {
+  id: string
+  /** epoch ms */
+  at: number
+  doseMl: number
+  batchId?: string
+}
+
+export interface Stock extends Syncable {
   id: string
   reagentId: string
   /** 母液は濃度 [mol/L] で保持する */
   molarity: number
   preparedAt: string // ISO 8601
-  volumeRemainingMl: number
+  /** 調製した量 [mL]。残量はここから usages を引いて求める（stockRemainingMl） */
+  initialVolumeMl: number
+  usages: StockUsage[]
 }
 
 /** スポイト。1滴の体積は器具に紐づく（試薬ではなく） */
-export interface Pipette {
+export interface Pipette extends Syncable {
   id: string
   name: string
   mlPer20Drops: number

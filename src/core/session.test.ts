@@ -33,7 +33,7 @@ const HOUR = 3_600_000
 
 describe('時刻ベースの積算（最重要）', () => {
   it('経過 1 時間・tick が 100 回しか呼ばれなくても電荷は正しい', () => {
-    const s = createSession('s1', 'b1', T0, 1.0)
+    const s = createSession('s1', 'b1', 'd1', T0, 1.0)
     // tick 相当の評価をまばらに 100 回だけ行う（値は使い捨て）
     for (let i = 1; i <= 100; i++) {
       sessionCoulombs(s, T0 + i * 36_000) // 36 秒間隔でしか「描画」されない
@@ -44,7 +44,7 @@ describe('時刻ベースの積算（最重要）', () => {
   })
 
   it('スリープ復帰: 30 分評価されなくても差分から正しく再計算される', () => {
-    const s = createSession('s1', 'b1', T0, 2.0)
+    const s = createSession('s1', 'b1', 'd1', T0, 2.0)
     const beforeSleep = sessionCoulombs(s, T0 + 10 * MIN)
     expect(beforeSleep).toBeCloseTo(1.2, 9) // 2 mA × 600 s
     // 30 分のスリープ後、次の評価で一気に追いつく
@@ -53,7 +53,7 @@ describe('時刻ベースの積算（最重要）', () => {
   })
 
   it('一時停止中は経過時間・電荷とも進まない', () => {
-    let s = createSession('s1', 'b1', T0, 1.0)
+    let s = createSession('s1', 'b1', 'd1', T0, 1.0)
     s = pauseSession(s, T0 + 10 * MIN)
     // 停止中に 20 分経過
     expect(sessionCoulombs(s, T0 + 30 * MIN)).toBeCloseTo(0.6, 9) // 1 mA × 600 s のまま
@@ -68,7 +68,7 @@ describe('時刻ベースの積算（最重要）', () => {
   })
 
   it('running 以外では cutSegment は何もしない', () => {
-    let s = createSession('s1', 'b1', T0, 1.0)
+    let s = createSession('s1', 'b1', 'd1', T0, 1.0)
     s = pauseSession(s, T0 + MIN)
     const after = cutSegment(s, T0 + 2 * MIN, 'current_change', { currentMa: 3 })
     expect(after).toBe(s)
@@ -77,7 +77,7 @@ describe('時刻ベースの積算（最重要）', () => {
 
 describe('区間の自動区切り', () => {
   it('電流変更で区間が閉じ、電荷が区間ごとに正しく積算される', () => {
-    let s = createSession('s1', 'b1', T0, 1.0)
+    let s = createSession('s1', 'b1', 'd1', T0, 1.0)
     s = cutSegment(s, T0 + 30 * MIN, 'current_change', { currentMa: 3.0 })
 
     expect(s.segments).toHaveLength(2)
@@ -93,7 +93,7 @@ describe('区間の自動区切り', () => {
   })
 
   it('閉じた区間は後続の操作で書き換わらない（append-only）', () => {
-    let s = createSession('s1', 'b1', T0, 1.0)
+    let s = createSession('s1', 'b1', 'd1', T0, 1.0)
     s = cutSegment(s, T0 + 10 * MIN, 'current_change', { currentMa: 2.0 })
     const closedSnapshot = { ...s.segments[0]! }
     s = cutSegment(s, T0 + 20 * MIN, 'reversal')
@@ -104,7 +104,7 @@ describe('区間の自動区切り', () => {
   })
 
   it('電圧だけ変更しても区間が切れ、電流は引き継がれる', () => {
-    let s = createSession('s1', 'b1', T0, 1.0, 24)
+    let s = createSession('s1', 'b1', 'd1', T0, 1.0, 24)
     s = cutSegment(s, T0 + 5 * MIN, 'voltage_change', { voltageV: 30 })
     const open = openSegment(s)!
     expect(open.currentMa).toBe(1.0)
@@ -114,14 +114,14 @@ describe('区間の自動区切り', () => {
 
 describe('整合性チェック', () => {
   it('正常なセッションは ok', () => {
-    let s = createSession('s1', 'b1', T0, 1.0)
+    let s = createSession('s1', 'b1', 'd1', T0, 1.0)
     s = cutSegment(s, T0 + 10 * MIN, 'reversal')
     s = cutSegment(s, T0 + 20 * MIN, 'reversal')
     expect(verifyTotalCoulombs(s).ok).toBe(true)
   })
 
   it('totalCoulombs が壊れていたら検出する', () => {
-    let s = createSession('s1', 'b1', T0, 1.0)
+    let s = createSession('s1', 'b1', 'd1', T0, 1.0)
     s = cutSegment(s, T0 + 10 * MIN, 'reversal')
     const broken = { ...s, totalCoulombs: s.totalCoulombs + 1 }
     const check = verifyTotalCoulombs(broken)
@@ -132,7 +132,7 @@ describe('整合性チェック', () => {
 
 describe('クラッシュ復帰', () => {
   const crashed = () => {
-    let s = createSession('s1', 'b1', T0, 1.0)
+    let s = createSession('s1', 'b1', 'd1', T0, 1.0)
     s = { ...s, updatedAt: T0 + 30 * MIN } // 最後の書き込みは 30 分時点
     return s
   }
@@ -161,7 +161,7 @@ describe('クラッシュ復帰', () => {
 
 describe('極性反転', () => {
   it('期待反転回数は通電経過から出る（停止時間は数えない）', () => {
-    let s = createSession('s1', 'b1', T0, 1.0)
+    let s = createSession('s1', 'b1', 'd1', T0, 1.0)
     expect(expectedReversals(s, T0 + 44 * MIN, 15)).toBe(2)
     s = pauseSession(s, T0 + 10 * MIN)
     s = resumeSession(s, T0 + 40 * MIN) // 30 分停止
@@ -170,7 +170,7 @@ describe('極性反転', () => {
   })
 
   it('反転区間を数え、奇数回で極性が入れ替わる', () => {
-    let s = createSession('s1', 'b1', T0, 1.0)
+    let s = createSession('s1', 'b1', 'd1', T0, 1.0)
     expect(polarityFlipped(s)).toBe(false)
     s = cutSegment(s, T0 + 15 * MIN, 'reversal')
     expect(reversalCount(s)).toBe(1)
@@ -180,13 +180,13 @@ describe('極性反転', () => {
   })
 
   it('カウントダウンと反転なし設定', () => {
-    const s = createSession('s1', 'b1', T0, 1.0)
+    const s = createSession('s1', 'b1', 'd1', T0, 1.0)
     expect(msUntilReversal(s, T0 + 14 * MIN, 15)).toBe(1 * MIN)
     expect(msUntilReversal(s, T0, 0)).toBeNull()
   })
 
   it('反転位置（グラフマーカー）は通電経過軸で出る', () => {
-    let s = createSession('s1', 'b1', T0, 1.0)
+    let s = createSession('s1', 'b1', 'd1', T0, 1.0)
     s = cutSegment(s, T0 + 15 * MIN, 'reversal')
     s = cutSegment(s, T0 + 30 * MIN, 'reversal')
     expect(reversalPositionsMs(s)).toEqual([15 * MIN, 30 * MIN])
@@ -195,7 +195,7 @@ describe('極性反転', () => {
 
 describe('派生値', () => {
   it('coulombsAt は任意時点の積算を返す', () => {
-    let s = createSession('s1', 'b1', T0, 1.0)
+    let s = createSession('s1', 'b1', 'd1', T0, 1.0)
     s = cutSegment(s, T0 + 10 * MIN, 'current_change', { currentMa: 2.0 })
     expect(coulombsAt(s, T0 + 5 * MIN)).toBeCloseTo(0.3, 9)
     expect(coulombsAt(s, T0 + 10 * MIN)).toBeCloseTo(0.6, 9)
@@ -203,7 +203,7 @@ describe('派生値', () => {
   })
 
   it('activeElapsedAtTime: 停止を挟んだ任意時点の通電経過', () => {
-    let s = createSession('s1', 'b1', T0, 1.0)
+    let s = createSession('s1', 'b1', 'd1', T0, 1.0)
     s = pauseSession(s, T0 + 10 * MIN)
     s = resumeSession(s, T0 + 30 * MIN)
     expect(activeElapsedAtTime(s, T0 + 5 * MIN)).toBe(5 * MIN)
@@ -212,20 +212,20 @@ describe('派生値', () => {
   })
 
   it('energyWh: V × C / 3600', () => {
-    const s = createSession('s1', 'b1', T0, 1.0, 24)
+    const s = createSession('s1', 'b1', 'd1', T0, 1.0, 24)
     // 1 mA × 3600 s = 3.6 C, × 24 V = 86.4 J = 0.024 Wh
     expect(energyWh(s, T0 + HOUR)).toBeCloseTo(0.024, 9)
   })
 
   it('平均電流は電荷 / 通電時間', () => {
-    let s = createSession('s1', 'b1', T0, 1.0)
+    let s = createSession('s1', 'b1', 'd1', T0, 1.0)
     s = cutSegment(s, T0 + 10 * MIN, 'current_change', { currentMa: 3.0 })
     // 10 分 @1mA + 10 分 @3mA → 平均 2 mA
     expect(averageCurrentMa(s, T0 + 20 * MIN)).toBeCloseTo(2.0, 9)
   })
 
   it('computeMeasured: 積算電荷 → mg / ppm', () => {
-    const s = createSession('s1', 'b1', T0, 1.0)
+    const s = createSession('s1', 'b1', 'd1', T0, 1.0)
     const m = computeMeasured(s, T0 + HOUR, 1.118, 92, 1000)
     expect(m.coulombs).toBeCloseTo(3.6, 9)
     expect(m.mg).toBeCloseTo(1.118 * 3.6 * 0.92, 9)
@@ -233,14 +233,14 @@ describe('派生値', () => {
   })
 
   it('endSession 後は時間が固定される', () => {
-    let s = createSession('s1', 'b1', T0, 1.0)
+    let s = createSession('s1', 'b1', 'd1', T0, 1.0)
     s = endSession(s, T0 + HOUR)
     expect(sessionCoulombs(s, T0 + 2 * HOUR)).toBeCloseTo(3.6, 9)
     expect(activeElapsedMs(s, T0 + 2 * HOUR)).toBe(HOUR)
   })
 
   it('マークは追記され updatedAt が進む', () => {
-    let s = createSession('s1', 'b1', T0, 1.0)
+    let s = createSession('s1', 'b1', 'd1', T0, 1.0)
     s = addMark(s, { at: T0 + MIN, kind: 'temp', value: 26.4 })
     expect(s.marks).toHaveLength(1)
     expect(s.updatedAt).toBe(T0 + MIN)
@@ -249,7 +249,7 @@ describe('派生値', () => {
 
 describe('グラフ系列', () => {
   it('区間の始点・終点から折れ線を作る（全秒サンプルはしない）', () => {
-    let s = createSession('s1', 'b1', T0, 1.0)
+    let s = createSession('s1', 'b1', 'd1', T0, 1.0)
     s = cutSegment(s, T0 + 10 * MIN, 'current_change', { currentMa: 2.0 })
     const pts = chartSeries(s, T0 + 20 * MIN)
     expect(pts.length).toBe(4) // 2 区間 × 2 点

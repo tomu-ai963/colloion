@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { electrochemicalEquivalent, METALS } from '../core/metals'
+import { newId } from '../core/id'
 import type { Batch } from '../core/model'
 import {
   addMark,
@@ -25,10 +26,6 @@ const storage = getStorage()
 
 const PERSIST_INTERVAL_MS = 10_000
 
-const newId = (): string =>
-  typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `id-${Date.now()}-${Math.random().toString(36).slice(2)}`
 
 export type RecoveryChoice = 'energized' | 'stopped' | 'ended' | 'discard'
 
@@ -97,7 +94,15 @@ export const useRunStore = create<RunState>((set, get) => ({
 
   async start(batch) {
     const now = Date.now()
-    const session = createSession(newId(), batch.id, now, batch.power.currentMa, batch.power.voltageV)
+    const deviceId = await storage.getDeviceId()
+    const session = createSession(
+      newId(),
+      batch.id,
+      deviceId,
+      now,
+      batch.power.currentMa,
+      batch.power.voltageV,
+    )
     const saved = await persist(session)
     lastPersistAt = now
     set({ session: saved, batch, now, reversalNoticeAt: null, integrityWarning: null })
@@ -176,8 +181,11 @@ export const useRunStore = create<RunState>((set, get) => ({
   dismissReversalNotice: () => set({ reversalNoticeAt: null }),
 
   async checkRecovery() {
-    const sessions = await storage.listSessions()
-    const pending = sessions.find((s) => s.status === 'running' || s.status === 'paused')
+    const [sessions, deviceId] = await Promise.all([storage.listSessions(), storage.getDeviceId()])
+    // 同期で届いた他端末の通電中セッションは復帰対象にしない（書き込めるのは開いた端末だけ）
+    const pending = sessions.find(
+      (s) => s.deviceId === deviceId && (s.status === 'running' || s.status === 'paused'),
+    )
     if (!pending) return
     const check = verifyTotalCoulombs(pending)
     const batch = useAppStore.getState().batches.find((b) => b.id === pending.batchId) ?? null

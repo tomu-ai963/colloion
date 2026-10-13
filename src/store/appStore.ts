@@ -14,16 +14,12 @@ import type {
   Stock,
   WaterConfig,
 } from '../core/model'
+import { newId } from '../core/id'
 import { METALS, defaultEta } from '../core/metals'
 import { getStorage } from '../storage'
 import { seedReagents } from '../storage/seed'
 
 const storage = getStorage()
-
-const newId = (): string =>
-  typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `id-${Date.now()}-${Math.random().toString(36).slice(2)}`
 
 /** 表示用バッチ番号 例: 2026-0801-03（同日のバッチ数 + 1） */
 export function batchLabel(existing: Batch[], now = new Date()): string {
@@ -84,10 +80,11 @@ export interface AppState {
   applyMeasured(id: string, measured: MeasuredSnapshot): Promise<void>
   deleteBatch(id: string): Promise<void>
 
-  addReagent(reagent: Omit<Reagent, 'id'>): Promise<Reagent>
+  addReagent(reagent: Omit<Reagent, 'id' | 'updatedAt'>): Promise<Reagent>
   saveStock(molarity: number, volumeMl: number, reagentId: string): Promise<Stock>
   useStock(stock: Stock): void
-  consumeStock(stockId: string, doseMl: number): Promise<void>
+  /** 母液の使用を追記する（残量は使用記録から求める） */
+  consumeStock(stockId: string, doseMl: number, batchId?: string): Promise<void>
 }
 
 const initialWater: WaterConfig = { volumeMl: 1000, type: '蒸留水', initialTds: 1, tempC: 24 }
@@ -127,7 +124,12 @@ const initialAdditive: AdditiveDraft = {
   timing: '通電前',
 }
 
-const defaultPipette: Pipette = { id: 'default-pipette', name: '標準スポイト', mlPer20Drops: 1.0 }
+const defaultPipette: Pipette = {
+  id: 'default-pipette',
+  name: '標準スポイト',
+  mlPer20Drops: 1.0,
+  updatedAt: 0,
+}
 
 export const useAppStore = create<AppState>((set, get) => ({
   ready: false,
@@ -203,7 +205,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setTargetPpm: (targetPpm) => set({ targetPpm }),
 
   setPipetteCalibration(mlPer20Drops) {
-    const pipette = { ...get().pipette, mlPer20Drops }
+    const pipette = { ...get().pipette, mlPer20Drops, updatedAt: Date.now() }
     set((s) => ({ pipette, additive: { ...s.additive, calibMlPer20: mlPer20Drops } }))
     void storage.savePipette(pipette)
   },
@@ -225,6 +227,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       id: newId(),
       label: s.label,
       createdAt: new Date().toISOString(),
+      updatedAt: Date.now(),
       mode: s.mode,
       water: { ...s.water },
       electrode: { ...s.electrode },
@@ -241,7 +244,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async updateResult(id, result) {
     const batch = get().batches.find((b) => b.id === id)
     if (!batch) return
-    const updated = { ...batch, result: { ...batch.result, ...result } }
+    const updated = { ...batch, result: { ...batch.result, ...result }, updatedAt: Date.now() }
     await storage.saveBatch(updated)
     set((s) => ({ batches: s.batches.map((b) => (b.id === id ? updated : b)) }))
   },
@@ -249,7 +252,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async applyMeasured(id, measured) {
     const batch = get().batches.find((b) => b.id === id)
     if (!batch) return
-    const updated = { ...batch, measured }
+    const updated = { ...batch, measured, updatedAt: Date.now() }
     await storage.saveBatch(updated)
     set((s) => ({ batches: s.batches.map((b) => (b.id === id ? updated : b)) }))
   },
@@ -260,7 +263,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   async addReagent(reagent) {
-    const full: Reagent = { ...reagent, id: newId() }
+    const full: Reagent = { ...reagent, id: newId(), updatedAt: Date.now() }
     await storage.saveReagent(full)
     set((s) => ({ reagents: [...s.reagents, full] }))
     return full
@@ -272,7 +275,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       reagentId,
       molarity,
       preparedAt: new Date().toISOString(),
-      volumeRemainingMl: volumeMl,
+      initialVolumeMl: volumeMl,
+      usages: [],
+      updatedAt: Date.now(),
     }
     await storage.saveStock(stock)
     set((s) => ({ stocks: [stock, ...s.stocks] }))
@@ -291,13 +296,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     }))
   },
 
-  async consumeStock(stockId, doseMl) {
+  async consumeStock(stockId, doseMl, batchId) {
     const stock = get().stocks.find((st) => st.id === stockId)
-    if (!stock) return
-    const updated = {
-      ...stock,
-      volumeRemainingMl: Math.max(0, stock.volumeRemainingMl - doseMl),
-    }
+    if (!stock || !(doseMl > 0)) return
+    const now = Date.now()
+    const usage = { id: newId(), at: now, doseMl, ...(batchId ? { batchId } : {}) }
+    const updated: Stock = { ...stock, usages: [...stock.usages, usage], updatedAt: now }
     await storage.saveStock(updated)
     set((s) => ({ stocks: s.stocks.map((st) => (st.id === stockId ? updated : st)) }))
   },

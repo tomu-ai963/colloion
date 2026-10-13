@@ -111,7 +111,7 @@ export function App() {
       buildAdditives(),
     )
     if (store.additive.method === 'stock' && store.additive.activeStockId) {
-      await store.consumeStock(store.additive.activeStockId, derived.doseMl)
+      await store.consumeStock(store.additive.activeStockId, derived.doseMl, batch.id)
     }
     return batch
   }

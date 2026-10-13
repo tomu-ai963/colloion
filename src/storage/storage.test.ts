@@ -8,6 +8,7 @@ const sampleBatch = (id: string, label: string): Batch => ({
   id,
   label,
   createdAt: new Date('2026-08-01T10:00:00Z').toISOString(),
+  updatedAt: 0,
   mode: 'colloid',
   water: { volumeMl: 1000, type: '蒸留水', initialTds: 1, tempC: 24 },
   electrode: { anode: 'Ag', cathode: '銀 Ag', purity: '99.99%', areaCm2: 12, gapMm: 35, route: 'electrolysis' },
@@ -24,6 +25,23 @@ describe('StorageAdapter (メモリ実装)', () => {
     expect(await st.listBatches()).toHaveLength(2)
     await st.deleteBatch('a')
     expect((await st.listBatches()).map((b) => b.id)).toEqual(['b'])
+  })
+
+  it('削除は墓標を書き、一覧から消える（物理削除しない）', async () => {
+    const st = new MemoryAdapter()
+    await st.saveBatch(sampleBatch('a', '2026-0801-01'))
+    await st.deleteBatch('a')
+    expect(await st.listBatches()).toHaveLength(0)
+    // 墓標付きで上書き保存されたレコードは同期で他端末に削除を伝える材料になる
+    await st.deleteBatch('missing') // 存在しない ID は何もしない
+    expect(await st.listBatches()).toHaveLength(0)
+  })
+
+  it('端末 ID は同じアダプタで常に同じ値', async () => {
+    const st = new MemoryAdapter()
+    const a = await st.getDeviceId()
+    expect(a).toBeTruthy()
+    expect(await st.getDeviceId()).toBe(a)
   })
 
   it('result の追記が保存される（computed は保存時点のまま）', async () => {

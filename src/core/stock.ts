@@ -4,6 +4,8 @@
  * 目標 mmol/L を保つ滴数を逆算できるようにするため。
  */
 
+import type { Stock } from './model'
+
 const safe = (n: number): number => (Number.isFinite(n) && n > 0 ? n : 0)
 
 /**
@@ -72,4 +74,14 @@ export function requiredDrops(
   if (perDropMmol <= 0) return null
   const neededMmol = safe(targetMmolL) * (safe(batchVolumeMl) / 1000)
   return neededMmol / perDropMmol
+}
+
+/**
+ * 母液の残量 [mL] = 調製量 − 使用記録の合計（0 で下止め）。
+ * 残量を直接上書きすると、2 台で別々に使ったときに片方の使用が消える。
+ * 使用記録を追記のみにしておけば、端末間のマージは和集合で済む。
+ */
+export function stockRemainingMl(stock: Pick<Stock, 'initialVolumeMl' | 'usages'>): number {
+  const used = stock.usages.reduce((sum, u) => sum + safe(u.doseMl), 0)
+  return Math.max(0, safe(stock.initialVolumeMl) - used)
 }

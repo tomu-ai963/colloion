@@ -2,10 +2,16 @@ import type { Batch, Pipette, Reagent, Stock } from '../core/model'
 import type { Session } from '../core/session'
 
 /**
- * 永続化の抽象。Phase 1 は IndexedDB のみだが、
- * Phase 3 の同期（Cloudflare Workers + D1）で差し替えられるようにしておく。
+ * 永続化の抽象。この端末の IndexedDB が正本で、Phase 3 の同期
+ * （Cloudflare Workers + D1）はこの上に送信待ちキューを重ねて行う。
+ *
+ * - list* は削除の墓標（deletedAt）が付いたレコードを返さない
+ * - delete* は物理削除せず墓標を書く（他端末に削除を伝えるため）
  */
 export interface StorageAdapter {
+  /** この端末の ID。初回に生成して保存し、以後は同じ値を返す */
+  getDeviceId(): Promise<string>
+
   listBatches(): Promise<Batch[]>
   saveBatch(batch: Batch): Promise<void>
   deleteBatch(id: string): Promise<void>
