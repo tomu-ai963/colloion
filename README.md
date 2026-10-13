@@ -228,21 +228,25 @@ S や Cl など同位体組成が試料により変わる元素は、IUPAC で�
 - GitHub Pages など同期サーバーの無い配信では、ログインの入口は表示されず、
   従来どおりローカル保存だけで動きます。
 
-### 本番デプロイ（未実施）
+### 本番
 
-ローカルでの動作確認までが完了しています。本番には次が必要です（いずれも未実施）。
+https://colloion.tomu-ai.dev （1 つの Worker がフロント・`/api/sync/*`・`/api/auth/*` を配信）。
+2026-10-13 に初回デプロイ済み:
 
-1. `wrangler d1 create colloion` を実行し、出力の ID を `wrangler.jsonc` の `database_id`（今はローカル用の仮 ID）に入れる
-2. `wrangler d1 migrations apply colloion --remote`
-3. `wrangler secret put NEON_AUTH_BASE_URL` と `wrangler secret put SYNC_ALLOWED_USER_IDS`
-   （どちらも `wrangler.jsonc` の vars には書かない。理由は同ファイルと `worker/access.ts` の注記）
-4. カスタムドメイン（例 `colloion.tomu-ai.dev`）を Worker に割り当て、Neon Auth の
-   trusted origins に登録する
-5. Neon Auth のメール送信元を共有アドレス（`auth@mail.myneon.app`）から独自の SMTP に替える（Neon の推奨）
-6. `npm run build:worker && wrangler deploy`
-7. Safari（iPhone）の実機でログインと同期を確認する
-8. GitHub Pages 版（`.github/workflows/pages.yml`）を残すか決める
-9. 自分以外にも同期を開く場合は、先にユーザーごとの容量上限（レコード数・バイト数）を入れる
+- D1 `colloion`（APAC）を作成し、`migrations/` を `--remote` で適用
+- secret `NEON_AUTH_BASE_URL` と `SYNC_ALLOWED_USER_IDS` を登録（`wrangler.jsonc` の vars には書かない）
+- カスタムドメイン `colloion.tomu-ai.dev`（workers.dev / Preview URL は無効）を割り当て、
+  Neon Auth の trusted origins に登録
+
+更新は `npm run build:worker && npx wrangler deploy`（`build:worker` は base を `/` にしてビルドする。
+通常の `npm run build` は GitHub Pages 用の `/colloion/` なので、そのまま deploy しないこと）。
+
+残っていること:
+
+1. Safari（iPhone）の実機でログインと同期を確認する
+2. Neon Auth のメール送信元を共有アドレス（`auth@mail.myneon.app`）から独自の SMTP に替える（Neon の推奨）
+3. GitHub Pages 版（`.github/workflows/pages.yml`）を残すか決める
+4. 自分以外にも同期を開く場合は、先にユーザーごとの容量上限（レコード数・バイト数）を入れる
 
 ## 限界 — 表示値について必ず知っておくこと
 
