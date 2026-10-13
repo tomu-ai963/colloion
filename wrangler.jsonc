@@ -1,12 +1,16 @@
 // colloion Worker（Phase 3）: フロント（dist/）の配信と同期 API（/api/*）を同じオリジンで提供する。
-// 本番のリソース作成（d1 create）・カスタムドメイン設定・deploy は、とむの確認を取ってから行う。
+// deploy は `npm run build:worker && npx wrangler deploy`（とむの確認を取ってから）。
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "colloion",
   "main": "worker/index.ts",
   "compatibility_date": "2026-10-01",
+  // 入口はカスタムドメイン 1 つに絞る。workers.dev / Preview URL があると別オリジンの入口になり、
+  // Cookie が別オリジンに付く・Neon Auth の trusted origins に無いなどでログインが壊れる
+  // （書かないと deploy のたびに既定で有効化される。bitane の wrangler.jsonc の注記を参照）
   "workers_dev": false,
   "preview_urls": false,
+  "routes": [{ "pattern": "colloion.tomu-ai.dev", "custom_domain": true }],
   "observability": {
     "enabled": true,
     "redact_query_string": true,
@@ -31,8 +35,9 @@
     {
       "binding": "DB",
       "database_name": "colloion",
-      // ローカル（--local）専用の仮 ID。本番は `wrangler d1 create colloion` の出力に置き換える
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      // 本番 D1（2026-10-13 `wrangler d1 create colloion --location apac`）。
+      // migrations の --remote 適用はとむが行う
+      "database_id": "44feb36a-c971-4c5a-ab27-eafb3a23c770",
       "migrations_dir": "migrations"
     }
   ]
