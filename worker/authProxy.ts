@@ -14,6 +14,7 @@
  * パスワードでのサインアップなど、使っていない経路は外から叩けないようにする。
  */
 
+import { readText } from './body'
 import type { D1Like } from './db'
 import { enforceRateLimit } from './rateLimit'
 
@@ -91,7 +92,7 @@ export function rewriteLocation(location: string, upstreamOrigin: string): strin
 }
 
 export class AuthProxyError extends Error {
-  constructor(readonly status: 400 | 404 | 405 | 503) {
+  constructor(readonly status: 404 | 405 | 503) {
     super(`auth proxy: ${status}`)
     this.name = 'AuthProxyError'
   }
@@ -115,11 +116,8 @@ export async function proxyAuth(
   if (request.method !== method) throw new AuthProxyError(405)
   const upstreamOrigin = new URL(base).origin
 
-  let body: string | undefined
-  if (method === 'POST') {
-    body = await request.text()
-    if (new TextEncoder().encode(body).byteLength > MAX_BODY_BYTES) throw new AuthProxyError(400)
-  }
+  // 読みながら上限で打ち切る（全部読んでから測ると、巨大な本文をメモリに載せてしまう）
+  const body = method === 'POST' ? await readText(request, MAX_BODY_BYTES) : undefined
 
   const ip = request.headers.get('cf-connecting-ip') ?? 'unknown'
   if (subPath === '/email-otp/send-verification-otp') {

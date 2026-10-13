@@ -8,7 +8,7 @@ import { IndexedDbAdapter } from '../storage/indexedDbAdapter'
 import { MemoryAdapter } from '../storage/memoryAdapter'
 import { DEBOUNCE_MS, MIN_INTERVAL_MS, SyncEngine } from './engine'
 import { MemorySyncServer } from './memoryServer'
-import { SyncAuthError, type SyncTransport } from './protocol'
+import { SyncAuthError, SyncForbiddenError, type SyncTransport } from './protocol'
 
 const T = 1_760_000_000_000
 
@@ -290,6 +290,26 @@ describe('SyncEngine: 失敗時', () => {
       const engine = new SyncEngine(store, { pull, push: vi.fn() })
       await expect(engine.syncOnce()).rejects.toBeInstanceOf(SyncAuthError)
       expect(engine.getStatus().phase).toBe('unauthorized')
+      engine.requestSync()
+      await vi.advanceTimersByTimeAsync(10 * 60_000)
+      expect(pull).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('SyncEngine: 同期の対象外（403）', () => {
+  it('forbidden で止まり、書き込みがあっても自動で再試行しない', async () => {
+    vi.useFakeTimers()
+    try {
+      const pull = vi.fn(async () => {
+        throw new SyncForbiddenError()
+      })
+      const store = new MemoryAdapter()
+      const engine = new SyncEngine(store, { pull, push: vi.fn() })
+      await expect(engine.syncOnce()).rejects.toBeInstanceOf(SyncForbiddenError)
+      expect(engine.getStatus().phase).toBe('forbidden')
       engine.requestSync()
       await vi.advanceTimersByTimeAsync(10 * 60_000)
       expect(pull).toHaveBeenCalledTimes(1)

@@ -4,5 +4,10 @@
 #   秘密鍵ではないが、公開リポジトリには載せない（worker/index.ts の Env の注記を参照）。
 #   本番は `wrangler secret put NEON_AUTH_BASE_URL`。
 NEON_AUTH_BASE_URL=
+# SYNC_ALLOWED_USER_IDS: 同期を使えるユーザー ID（Neon の user.id = JWT の sub）をカンマ区切りで。
+#   未設定・空だと同期 API は 503 で止まる（worker/access.ts）。`*` で全員だが、ユーザーごとの
+#   容量上限が無い今は使わないこと。本番は `wrangler secret put SYNC_ALLOWED_USER_IDS`。
+#   自分の ID は、一度ログインしたあとローカル D1 の records.user_id で分かる。
+SYNC_ALLOWED_USER_IDS=
 # vite の開発サーバーは /api を wrangler dev に中継するので、通常は空でよい
 ALLOWED_ORIGINS=

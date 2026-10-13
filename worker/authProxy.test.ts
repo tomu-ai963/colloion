@@ -69,9 +69,32 @@ describe('認証の中継: 転送先と許可リスト', () => {
     expect((await call('/api/auth/get-session')).status).toBe(503)
   })
 
-  it('本文が大きすぎれば 400', async () => {
+  it('本文が大きすぎれば 413（Content-Length を偽っても読みながら打ち切る）', async () => {
     const res = await call('/api/auth/sign-in/email-otp', post({ email: 'x'.repeat(20_000) }))
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(413)
+
+    // Content-Length を付けない（chunked）本文でも上限で止まる
+    const chunk = new TextEncoder().encode('x'.repeat(8 * 1024))
+    let sent = 0
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent >= 1024) return controller.close() // 8 MB まで出せるが、途中で読み捨てられるはず
+        sent++
+        controller.enqueue(chunk)
+      },
+    })
+    const res2 = await handle(
+      new Request(`${APP}/api/auth/sign-in/email-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: APP },
+        body: stream,
+        duplex: 'half',
+      } as RequestInit),
+      env,
+      { fetch: upstream },
+    )
+    expect(res2.status).toBe(413)
+    expect(sent).toBeLessThan(10) // 16 KB を超えた時点で読むのをやめている
     expect(upstream).not.toHaveBeenCalled()
   })
 

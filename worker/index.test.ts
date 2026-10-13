@@ -39,7 +39,7 @@ const pushBody = (changes: unknown[]) => ({
 beforeEach(async () => {
   auth = await createTestAuth()
   db = new SqliteD1()
-  env = { DB: db, ALLOWED_ORIGINS: 'http://localhost:5173' }
+  env = { DB: db, ALLOWED_ORIGINS: 'http://localhost:5173', SYNC_ALLOWED_USER_IDS: 'user-a, user-b' }
 })
 
 describe('Worker: ルーティング', () => {
@@ -106,6 +106,70 @@ describe('Worker: 認証', () => {
     const res = await handle(new Request(`${ORIGIN}/api/sync/pull`), env)
     expect(res.status).toBe(503)
     expect(await res.json()).toEqual({ error: 'sync_not_configured' })
+  })
+})
+
+describe('Worker: 同期を使えるユーザー（許可リスト）', () => {
+  it('許可リストが未設定・空なら、認証できても同期 API は 503（全開放に倒れない）', async () => {
+    for (const v of [undefined, '', ' , ']) {
+      env.SYNC_ALLOWED_USER_IDS = v
+      const res = await call('/api/sync/pull', await authed('user-a'))
+      expect(res.status, String(v)).toBe(503)
+      expect(await res.json()).toEqual({ error: 'sync_not_configured' })
+    }
+  })
+
+  it('リストに無いユーザーは 403（理由は forbidden）で、何も書かれない', async () => {
+    const res = await call(
+      '/api/sync/push',
+      await authed('stranger', pushBody([{ kind: 'reagent', id: 'a', baseRev: null, record: record('a') }])),
+    )
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: 'forbidden' })
+    expect(db.db.prepare('SELECT COUNT(*) AS n FROM records').get()).toEqual({ n: 0 })
+  })
+
+  it('リストにあるユーザーは通り、`*` なら誰でも通る', async () => {
+    expect((await call('/api/sync/pull', await authed('user-b'))).status).toBe(200)
+    env.SYNC_ALLOWED_USER_IDS = '*'
+    expect((await call('/api/sync/pull', await authed('anyone'))).status).toBe(200)
+  })
+
+  it('認証より前に許可リストを見ない（未認証は 401 のまま。リストの有無を漏らさない）', async () => {
+    expect((await call('/api/sync/pull')).status).toBe(401)
+  })
+})
+
+describe('Worker: ユーザーごとのレート制限', () => {
+  it('push は 1 時間に 600 回まで。別のユーザーには影響しない', async () => {
+    const init = async (sub: string) => authed(sub, pushBody([]))
+    const a = await init('user-a')
+    for (let i = 0; i < 600; i++) {
+      const res = await call('/api/sync/push', a)
+      expect(res.status).toBe(200)
+    }
+    const over = await call('/api/sync/push', a)
+    expect(over.status).toBe(429)
+    expect(await over.json()).toEqual({ error: 'rate_limited' })
+    expect(Number(over.headers.get('Retry-After'))).toBeGreaterThan(0)
+    expect((await call('/api/sync/push', await init('user-b'))).status).toBe(200)
+    // pull は別の枠
+    expect((await call('/api/sync/pull', await authed('user-a'))).status).toBe(200)
+  })
+
+  it('最大件数・全件競合の push でも、1 リクエストの D1 クエリ数は Free の上限 50 に収まる', async () => {
+    const changes = Array.from({ length: 40 }, (_, i) => ({
+      kind: 'reagent',
+      id: `r${i}`,
+      baseRev: null,
+      record: record(`r${i}`),
+    }))
+    expect((await call('/api/sync/push', await authed('user-a', pushBody(changes)))).status).toBe(200)
+    db.queries = 0
+    const res = await call('/api/sync/push', await authed('user-a', pushBody(changes)))
+    const body = (await res.json()) as { results: { status: string }[] }
+    expect(body.results.every((r) => r.status === 'conflict')).toBe(true)
+    expect(db.queries).toBeLessThanOrEqual(50)
   })
 })
 

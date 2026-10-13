@@ -8,7 +8,8 @@
 > 一切扱いません。本ツールが表示する数値は理論値・推定値であり（後述の「限界」参照）、
 > 分析機器による実測の代わりにはなりません。
 
-サーバ不要のローカル完結（IndexedDB 永続化）で、作業場でオフラインでも動きます。
+記録はこの端末の IndexedDB に保存され、作業場でオフラインでも動きます。
+任意でログインすると、同じアカウントの端末どうしで記録を同期できます（Phase 3。後述）。
 
 | 通常モード | 通電モード（Run Mode） |
 |---|---|
@@ -18,12 +19,24 @@
 
 ```bash
 npm install
-npm run dev        # 開発サーバ
+npm run dev        # 開発サーバ（同期なしで動く）
 npm run build      # 本番ビルド（GitHub Pages 向け base=/colloion/）
-npm run typecheck  # 型検査
-npm run lint       # ESLint
-npm run test       # Vitest（core の単体テスト + 主要 UI テスト）
+npm run typecheck  # 型検査（フロント・Worker）
+npm run lint       # ESLint（src・worker）
+npm run test       # Vitest（core・同期エンジン・Worker・主要 UI）
 ```
+
+同期（Worker + D1 + ログイン）まで含めてローカルで動かす場合:
+
+```bash
+cp .dev.vars.example .dev.vars   # NEON_AUTH_BASE_URL と SYNC_ALLOWED_USER_IDS を入れる
+npm run migrate:local            # ローカル D1 にマイグレーションを適用
+npm run dev:worker               # base=/ でビルドして wrangler dev（http://localhost:8787）
+```
+
+`npm run dev`（vite）と `npx wrangler dev` を並べて起動すると、vite が `/api` を
+wrangler dev に中継するので、画面のホットリロードを使いながら同期も試せます。
+Worker のテストは `node:sqlite` を使うため Node 22.13 以上が必要です。
 
 ## 機能
 
@@ -38,6 +51,9 @@ npm run test       # Vitest（core の単体テスト + 主要 UI テスト）
   クラッシュ復帰・Wake Lock。詳細は後述。
 - **記録** — バッチは保存時点の計算値をスナップショットとして固定。実測 TDS を
   入れると電流効率 η の補正案が出ます。JSON / CSV エクスポート対応。
+- **同期（任意）** — メールに届く 6 桁のコードでログインすると、バッチ・試薬・母液・
+  スポイト・通電セッションが同じアカウントの端末間で同期されます。
+  オフラインの間の変更は端末に溜まり、接続が戻ると送られます。
 
 ## 計算の根拠
 
@@ -138,6 +154,96 @@ S や Cl など同位体組成が試料により変わる元素は、IUPAC で�
   フォールバックし、画面を壊しません。減光は CSS 変数の切り替えで実装
   （filter は SVG 描画品質に影響するため不使用）。
 
+## 同期（Phase 3）
+
+### 仕組み
+
+- **この端末の IndexedDB が正本**です。サーバー（Cloudflare Workers + D1）とは差分だけを
+  やり取りし、ログインしていなくても、通信できなくても、アプリはそのまま動きます。
+- 保存のたびに、レコードの書き込みと**送信待ちキュー（outbox）**への追加を
+  1 トランザクションで行います。キューは「種類:ID」単位で 1 件にまとまるので、
+  Run Mode の 10 秒ごとの保存でも増え続けません。
+- 1 回の同期は **pull → push** です。サーバーはユーザーごとの通し番号 `rev` を振り、
+  push には「どの版を元に書き換えたか（`baseRev`）」を添えます。一致しなければ
+  サーバーは競合として現在の版を返し、マージはクライアントが行います。
+- 送信は保存から 2 秒後、ただし前回の同期から 30 秒は空けます。オンライン復帰・
+  タブ復帰で即時、表示中は 5 分ごとに他端末の変更を取りに行きます。
+- 削除は物理削除ではなく**墓標**（`deletedAt`）を残し、他端末に削除を伝えます。
+
+### 競合したときの規則
+
+| 種類 | 規則 |
+|---|---|
+| 共通 | 削除は編集より強い。それ以外は `updatedAt` が新しい方（同時刻ならサーバー側） |
+| バッチ | 条件と `computed` は保存後に変わらない。`result` は後勝ち、`measured` は負けた側にしか無ければ残す |
+| 母液 | 使用記録 `usages` は追記のみで、和集合を取る（2 台で別々に使った分が両方残る）。残量は「調製量 − 使用量の合計」 |
+| 通電セッション | 開いた端末（`deviceId`）だけが書ける。他端末には読み取り専用で届き、クラッシュ復帰の対象にもならない |
+| 試薬・スポイト | 後勝ち。シード試薬は ID 固定・`updatedAt = 0` なので、どの実データにも負ける |
+
+アプリの状態が同期前の古い版のまま保存されても、`rev` を下げず、追記のみのデータ
+（使用記録・`measured`）は失わないようにしています（`rebaseLocalWrite`）。
+
+### 認証
+
+- **Neon Managed Better Auth** のメール OTP（6 桁のコード）でログインします。
+- フロント・同期 API・認証を **1 つの Worker・同一オリジン**で配信します。認証は
+  `/api/auth/*` が Neon へ中継（リバースプロキシ）し、セッション Cookie を first-party に
+  します。別サイトのままだと Safari（ITP）などで Cookie が落ちるためです。
+  中継の書き換え規則（Set-Cookie を `SameSite=Lax` にして `Partitioned` を外す、
+  上流の Location を自オリジンへ、Origin・Cookie・Sec-Fetch-* は素通し）は
+  bitane で実機確認済みのものに合わせています。
+- 中継するのは使うエンドポイントだけ（コード送信・コードでのサインイン・セッション確認・
+  トークン取得・サインアウト）。パスワードでのサインアップなどは外から叩けません。
+- 同期 API は `Authorization: Bearer <JWT>` です。JWT（EdDSA・15 分）は Neon の公開鍵
+  （JWKS）で検証し、`iss` / `aud` は Auth URL のオリジンと照合します。
+  **Worker は秘密情報を持ちません。**
+- **同期を使えるのは許可リスト（`SYNC_ALLOWED_USER_IDS`）にあるユーザーだけ**です。
+  Neon のサインアップは誰にでも開いているため、リストが無いと誰でもアカウントを作って
+  D1 の日次上限（Cloudflare アカウント全体で共有）や容量を使い切れます。
+  未設定・空なら同期 API は 503 で止まります（設定漏れで全開放にならない）。
+  判定はメールアドレスではなくユーザー ID（JWT の `sub`）で行います。メールで判定すると、
+  他人のアドレスで先に登録されたアカウントを通してしまうためです。
+  `*` で全員に開けますが、ユーザーごとの容量上限が無い今は使わないでください。
+- フロントは Neon SDK を使わず素の fetch で叩きます（bitane で、SDK がセッション情報を
+  `localStorage` に流す・`/token` がキャッシュで短絡する問題を実機で確認したため）。
+  セッションは HttpOnly Cookie、アクセストークンはメモリにだけ持ちます。
+
+### 制限
+
+| 項目 | 値 | 理由 |
+|---|---|---|
+| 1 回の push の件数 | 40 件 | D1 の「1 呼び出しあたりのクエリ数」は Workers Free で 50 |
+| 1 レコードの大きさ | 256 KB | — |
+| push の本文 | 4 MB | — |
+| コードの送信 | 同じメール宛て 5 回/時、同じ IP から 20 回/時 | 認証の中継に D1 のカウンタで掛ける |
+| コードでのサインイン | 同じ IP から 30 回/時 | コードごとの試行回数は Neon 側でも制限される |
+| 同期 API | ユーザーごとに push 600 回/時・pull 1200 回/時 | Run Mode 中の同期（30 秒ごと）は 120 回/時程度 |
+
+### 注意
+
+- **別のアカウントでログインすると、この端末の記録はそのアカウントにも送られます。**
+  ログイン画面で、前回と違うアカウントなら注意を出します。
+- ログアウトしても端末の記録は消えません。送信待ちは次に同じアカウントで
+  ログインしたときに送られます。
+- GitHub Pages など同期サーバーの無い配信では、ログインの入口は表示されず、
+  従来どおりローカル保存だけで動きます。
+
+### 本番デプロイ（未実施）
+
+ローカルでの動作確認までが完了しています。本番には次が必要です（いずれも未実施）。
+
+1. `wrangler d1 create colloion` を実行し、出力の ID を `wrangler.jsonc` の `database_id`（今はローカル用の仮 ID）に入れる
+2. `wrangler d1 migrations apply colloion --remote`
+3. `wrangler secret put NEON_AUTH_BASE_URL` と `wrangler secret put SYNC_ALLOWED_USER_IDS`
+   （どちらも `wrangler.jsonc` の vars には書かない。理由は同ファイルと `worker/access.ts` の注記）
+4. カスタムドメイン（例 `colloion.tomu-ai.dev`）を Worker に割り当て、Neon Auth の
+   trusted origins に登録する
+5. Neon Auth のメール送信元を共有アドレス（`auth@mail.myneon.app`）から独自の SMTP に替える（Neon の推奨）
+6. `npm run build:worker && wrangler deploy`
+7. Safari（iPhone）の実機でログインと同期を確認する
+8. GitHub Pages 版（`.github/workflows/pages.yml`）を残すか決める
+9. 自分以外にも同期を開く場合は、先にユーザーごとの容量上限（レコード数・バイト数）を入れる
+
 ## 限界 — 表示値について必ず知っておくこと
 
 - **ppm は理論値・推定値です。** ファラデー則と入力された電流効率から計算した
@@ -159,15 +265,19 @@ S や Cl など同位体組成が試料により変わる元素は、IUPAC で�
 
 ```
 src/
-  core/       UI 非依存の計算ロジック（ここだけでテストが完結）
+  core/       UI 非依存の計算ロジック・同期のマージ規則（ここだけでテストが完結）
   store/      Zustand ストアと派生計算（derive）
-  storage/    StorageAdapter インターフェース + IndexedDB / メモリ実装
-  ui/         パネル・共通コンポーネント・readout・Run Mode
-docs/           参照用 UI モック・スクリーンショット
+  storage/    StorageAdapter / SyncStore + IndexedDB / メモリ実装・スキーマ移行
+  sync/       同期エンジン・通信プロトコル・サーバーの基準実装（MemorySyncServer）
+  auth/       ログイン（Neon Auth を /api/auth/* 経由で）
+  ui/         パネル・共通コンポーネント・readout・Run Mode・同期の画面
+worker/       Cloudflare Worker（同期 API・認証の中継・アセット配信）
+migrations/   D1 のスキーマ
+docs/         参照用 UI モック・スクリーンショット
 ```
 
-同期機能（Cloudflare Workers + D1）は Phase 3 の想定で、現在は
-`StorageAdapter` インターフェースの差し替え口だけを用意しています。
+Worker の push / pull は、サーバーの基準実装（`src/sync/memoryServer.ts`）と同じ操作で
+同じ結果（`rev` の値まで）になることをテストで確かめています（`worker/sync.test.ts`）。
 
 ## License
 

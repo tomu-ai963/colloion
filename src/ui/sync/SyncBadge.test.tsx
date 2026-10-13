@@ -175,6 +175,7 @@ describe('syncLabel', () => {
       text: '同期エラー（送信待ち 1）',
     })
     expect(syncLabel(status({ phase: 'unauthorized' })).text).toBe('再ログインが必要')
+    expect(syncLabel(status({ phase: 'forbidden' }))).toEqual({ tone: 'warn', text: '同期の対象外' })
   })
 })
 

@@ -68,6 +68,14 @@ export interface SyncTransport {
   pull(since: number): Promise<PullResponse>
 }
 
+/** このアカウントは同期の対象外（403。サーバーの許可リストに無い）。エンジンは再試行せず止まる */
+export class SyncForbiddenError extends Error {
+  constructor() {
+    super('このアカウントは同期の対象外です')
+    this.name = 'SyncForbiddenError'
+  }
+}
+
 /** 認証切れ（401）。エンジンはこれを受けたら再試行せず止まる */
 export class SyncAuthError extends Error {
   constructor(message = '認証が必要です') {

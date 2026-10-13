@@ -19,6 +19,8 @@ export function syncLabel(status: SyncStatus): { tone: SyncTone; text: string } 
       return { tone: 'warn', text: `同期エラー${pending}` }
     case 'unauthorized':
       return { tone: 'warn', text: '再ログインが必要' }
+    case 'forbidden':
+      return { tone: 'warn', text: '同期の対象外' }
     case 'idle':
       if (status.pending > 0) return { tone: 'busy', text: `送信待ち ${status.pending}` }
       if (status.lastSyncedAt !== null) return { tone: 'ok', text: `同期済み ${hhmm(status.lastSyncedAt)}` }
@@ -37,6 +39,8 @@ export function syncDetail(status: SyncStatus): string {
       return `同期に失敗しました。しばらくしてから自動で再試行します。${status.error ? `（${status.error}）` : ''}`
     case 'unauthorized':
       return 'ログインの有効期限が切れました。もう一度ログインしてください。'
+    case 'forbidden':
+      return 'このアカウントは、この同期サーバーで同期できる対象になっていません。記録はこの端末に保存されています。'
     case 'idle':
       if (status.pending > 0) return `${status.pending} 件の変更を送る準備をしています。`
       return status.lastSyncedAt !== null

@@ -19,9 +19,11 @@ import {
   Unauthorized,
   type AuthConfig,
 } from './auth'
+import { isAllowed, parseAllowedUsers } from './access'
 import { AuthProxyError, proxyAuth } from './authProxy'
+import { readText } from './body'
 import type { D1Like } from './db'
-import { RateLimited } from './rateLimit'
+import { enforceRateLimit, RateLimited } from './rateLimit'
 import { pull, push } from './sync'
 import { BadRequest, parsePushBody, parseSince } from './validate'
 
@@ -34,6 +36,11 @@ export interface Env {
    * Neon の認証 API を直接叩く入口（中継のレート制限を迂回できる）を晒すことになる
    */
   NEON_AUTH_BASE_URL?: string
+  /**
+   * 同期を使えるユーザー ID（カンマ区切り。`*` で全員）。未設定なら同期 API は 503（worker/access.ts）。
+   * 本番は `wrangler secret put`、ローカルは .dev.vars
+   */
+  SYNC_ALLOWED_USER_IDS?: string
   /** CORS を許すオリジン（カンマ区切り）。本番は同一オリジンなので空 */
   ALLOWED_ORIGINS?: string
   ASSETS?: { fetch(request: Request): Promise<Response> }
@@ -73,33 +80,6 @@ function corsHeaders(request: Request, env: Env): Record<string, string> {
   }
 }
 
-/** 本文を上限付きで読む（Content-Length が無い・偽っている場合も上限で打ち切る） */
-async function readText(request: Request, maxBytes: number): Promise<string> {
-  const declared = Number(request.headers.get('Content-Length') ?? '0')
-  if (declared > maxBytes) throw new BadRequest('リクエストが大きすぎます', 413)
-  if (!request.body) return ''
-  const reader = request.body.getReader()
-  const chunks: Uint8Array[] = []
-  let total = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    total += value.byteLength
-    if (total > maxBytes) {
-      await reader.cancel()
-      throw new BadRequest('リクエストが大きすぎます', 413)
-    }
-    chunks.push(value)
-  }
-  const buf = new Uint8Array(total)
-  let offset = 0
-  for (const c of chunks) {
-    buf.set(c, offset)
-    offset += c.byteLength
-  }
-  return new TextDecoder().decode(buf)
-}
-
 async function handleApi(request: Request, env: Env, url: URL, deps: Deps): Promise<Response> {
   if (url.pathname === '/api/health' && request.method === 'GET') {
     return json(200, { ok: true })
@@ -112,12 +92,15 @@ async function handleApi(request: Request, env: Env, url: URL, deps: Deps): Prom
     return json(405, { error: 'method_not_allowed' }, { Allow: isPull ? 'GET' : 'POST' })
   }
 
+  const policy = parseAllowedUsers(env.SYNC_ALLOWED_USER_IDS)
   let authConfig = deps.authConfig
-  if (!authConfig) {
-    if (!env.NEON_AUTH_BASE_URL) return json(503, { error: 'sync_not_configured' })
-    authConfig = authConfigFromBaseUrl(env.NEON_AUTH_BASE_URL)
-  }
+  if (!authConfig && env.NEON_AUTH_BASE_URL) authConfig = authConfigFromBaseUrl(env.NEON_AUTH_BASE_URL)
+  if (!authConfig || !policy) return json(503, { error: 'sync_not_configured' })
+
   const userId = await authenticate(request, authConfig)
+  if (!isAllowed(policy, userId)) return json(403, { error: 'forbidden' })
+  // ユーザーごとの上限。Run Mode 中の同期は 30 秒ごと（push・pull とも 120 回/時程度）
+  await enforceRateLimit(env.DB, isPull ? 'sync_pull' : 'sync_push', userId, isPull ? 1200 : 600)
 
   if (isPull) {
     const since = parseSince(url.searchParams.get('since'))
@@ -170,7 +153,7 @@ function errorResponse(e: unknown): Response {
     return json(429, { error: 'rate_limited' }, { 'Retry-After': String(e.retryAfterSec) })
   }
   if (e instanceof AuthProxyError) {
-    const error = { 400: 'bad_request', 404: 'not_found', 405: 'method_not_allowed', 503: 'auth_not_configured' }
+    const error = { 404: 'not_found', 405: 'method_not_allowed', 503: 'auth_not_configured' }
     return json(e.status, { error: error[e.status] })
   }
   if (e instanceof BadRequest) {

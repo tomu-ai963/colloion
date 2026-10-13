@@ -155,7 +155,7 @@ describe('端から端まで: 2 台の端末 → HttpTransport → Worker → D1
 
   /** fetch の代わりに Worker の handle を直接呼ぶ */
   function device(name: string, userId: string) {
-    const env: Env = { DB: db }
+    const env: Env = { DB: db, SYNC_ALLOWED_USER_IDS: 'user-1,user-2' }
     const transport = new HttpTransport({
       baseUrl: 'https://colloion.tomu-ai.dev',
       getToken: () => auth.token(userId),
@@ -213,8 +213,17 @@ describe('端から端まで: 2 台の端末 → HttpTransport → Worker → D1
     expect(await c.store.getRecord('reagent', 'private')).toBeUndefined()
   })
 
+  it('許可リストに無いユーザーは forbidden で止まり、再試行しない', async () => {
+    const x = device('x', 'stranger')
+    await x.engine.attach('stranger')
+    await x.store.saveReagent(reagent('mine'))
+    await expect(x.engine.syncOnce()).rejects.toThrow()
+    expect(x.engine.getStatus()).toMatchObject({ phase: 'forbidden', pending: 1 })
+    expect(db.db.prepare('SELECT COUNT(*) AS n FROM records').get()).toEqual({ n: 0 })
+  })
+
   it('トークンが期限切れなら unauthorized で止まる', async () => {
-    const env: Env = { DB: db }
+    const env: Env = { DB: db, SYNC_ALLOWED_USER_IDS: 'user-1' }
     const transport = new HttpTransport({
       baseUrl: 'https://colloion.tomu-ai.dev',
       getToken: () => auth.token('user-1', { expiresIn: '-1m' }),

@@ -1,5 +1,6 @@
 import {
   SyncAuthError,
+  SyncForbiddenError,
   type PullResponse,
   type PushRequest,
   type PushResponse,
@@ -49,6 +50,7 @@ export class HttpTransport implements SyncTransport {
       cache: 'no-store',
     })
     if (res.status === 401) throw new SyncAuthError()
+    if (res.status === 403) throw new SyncForbiddenError()
     if (!res.ok) throw new SyncHttpError(res.status)
     return (await res.json()) as T
   }

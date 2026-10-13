@@ -20,6 +20,7 @@ import { deepEqual } from './equal'
 import {
   PUSH_BATCH_LIMIT,
   SyncAuthError,
+  SyncForbiddenError,
   type AnyRecord,
   type PushChange,
   type SyncTransport,
@@ -36,7 +37,7 @@ const RETRY_MAX_MS = 5 * 60_000
 const META_CURSOR = 'pullCursor'
 const META_USER = 'syncUserId'
 
-export type SyncPhase = 'idle' | 'syncing' | 'offline' | 'error' | 'unauthorized'
+export type SyncPhase = 'idle' | 'syncing' | 'offline' | 'error' | 'unauthorized' | 'forbidden'
 
 export interface SyncStatus {
   phase: SyncPhase
@@ -141,6 +142,8 @@ export class SyncEngine {
       await this.refreshPending().catch(() => {})
       if (e instanceof SyncAuthError) {
         this.setStatus({ phase: 'unauthorized', error: e.message })
+      } else if (e instanceof SyncForbiddenError) {
+        this.setStatus({ phase: 'forbidden', error: e.message })
       } else {
         this.failures++
         this.setStatus({
@@ -236,7 +239,7 @@ export class SyncEngine {
 
   /** 書き込みのあとに呼ぶ。DEBOUNCE_MS 後、前回から MIN_INTERVAL_MS 空けて同期する */
   requestSync(): void {
-    if (this.status.phase === 'unauthorized') return
+    if (this.status.phase === 'unauthorized' || this.status.phase === 'forbidden') return
     const sinceLast = Date.now() - this.lastRunAt
     this.schedule(Math.max(DEBOUNCE_MS, MIN_INTERVAL_MS - sinceLast))
   }
