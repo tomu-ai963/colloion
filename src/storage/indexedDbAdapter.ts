@@ -1,6 +1,6 @@
-import { openDB, type DBSchema, type IDBPDatabase, type StoreNames } from 'idb'
+import { openDB, type DBSchema, type IDBPDatabase, type IDBPTransaction } from 'idb'
 import { newId } from '../core/id'
-import type { SyncKind } from '../core/merge'
+import type { SyncKind, SyncRecordMap } from '../core/merge'
 import type { Batch, Pipette, Reagent, Stock } from '../core/model'
 import type { Session } from '../core/session'
 import {
@@ -12,14 +12,14 @@ import {
   type LegacyStock,
 } from './migrate'
 import type { StorageAdapter } from './StorageAdapter'
-
-/** 送信待ちキューの1件。レコード本体は持たず、送信時点の最新版を読み直す */
-export interface OutboxEntry {
-  seq?: number
-  kind: SyncKind
-  id: string
-  queuedAt: number
-}
+import {
+  ChangeNotifier,
+  outboxKey,
+  rebaseLocalWrite,
+  type OutboxEntry,
+  type RecordUpdate,
+  type SyncStore,
+} from './SyncStore'
 
 interface ColloionDB extends DBSchema {
   batches: { key: string; value: Batch }
@@ -29,20 +29,39 @@ interface ColloionDB extends DBSchema {
   sessions: { key: string; value: Session }
   /** v3: 端末 ID・最終同期位置などのキーバリュー */
   meta: { key: string; value: string }
-  /** v3: 同期の送信待ちキュー（Phase 3 Step 2 で使う） */
-  outbox: { key: number; value: OutboxEntry }
+  /** v4: 同期の送信待ちキュー（キー = kind:id） */
+  outbox: { key: string; value: OutboxEntry }
 }
 
 type RecordStore = 'batches' | 'reagents' | 'stocks' | 'pipettes' | 'sessions'
 
+const STORE_OF: { [K in SyncKind]: RecordStore } = {
+  batch: 'batches',
+  reagent: 'reagents',
+  stock: 'stocks',
+  pipette: 'pipettes',
+  session: 'sessions',
+}
+
 const DEVICE_ID_KEY = 'deviceId'
 
-export class IndexedDbAdapter implements StorageAdapter {
+type WriteTx = IDBPTransaction<ColloionDB, (RecordStore | 'outbox')[], 'readwrite'>
+
+/** 送信待ちに積む（同じレコードは1件にまとまり、版番号 n が進む） */
+async function enqueueIn(tx: WriteTx, kind: SyncKind, id: string) {
+  const outbox = tx.objectStore('outbox')
+  const key = outboxKey(kind, id)
+  const cur = await outbox.get(key)
+  await outbox.put({ key, kind, id, n: (cur?.n ?? 0) + 1, queuedAt: Date.now() })
+}
+
+export class IndexedDbAdapter implements StorageAdapter, SyncStore {
   private dbPromise: Promise<IDBPDatabase<ColloionDB>>
   private deviceIdPromise: Promise<string> | undefined
+  private changes = new ChangeNotifier()
 
   constructor(dbName = 'colloion') {
-    this.dbPromise = openDB<ColloionDB>(dbName, 3, {
+    this.dbPromise = openDB<ColloionDB>(dbName, 4, {
       async upgrade(db, oldVersion, _newVersion, tx) {
         if (oldVersion < 1) {
           db.createObjectStore('batches', { keyPath: 'id' })
@@ -55,7 +74,6 @@ export class IndexedDbAdapter implements StorageAdapter {
         }
         if (oldVersion < 3) {
           db.createObjectStore('meta')
-          db.createObjectStore('outbox', { keyPath: 'seq', autoIncrement: true })
 
           // 既存レコードに同期メタ情報を補完する。
           // upgrade 中は IDB 以外の await を挟まない（トランザクションが閉じるため）
@@ -85,6 +103,11 @@ export class IndexedDbAdapter implements StorageAdapter {
             migrateSession(v, deviceId),
           )
         }
+        if (oldVersion < 4) {
+          // v3 の outbox は保存ごとに1行増える形だった。kind:id キーで作り直す
+          if (db.objectStoreNames.contains('outbox')) db.deleteObjectStore('outbox')
+          db.createObjectStore('outbox', { keyPath: 'key' })
+        }
       },
     })
   }
@@ -101,71 +124,162 @@ export class IndexedDbAdapter implements StorageAdapter {
     return this.deviceIdPromise
   }
 
+  // ---- アプリ向け（StorageAdapter） ----
+
   /** 墓標の付いていないレコードだけ */
-  private async listLive<S extends RecordStore>(store: S): Promise<ColloionDB[S]['value'][]> {
-    const all = await (await this.dbPromise).getAll(store as StoreNames<ColloionDB>)
-    return (all as ColloionDB[S]['value'][]).filter((v) => v.deletedAt === undefined)
+  private async listLive<K extends SyncKind>(kind: K): Promise<SyncRecordMap[K][]> {
+    const all = (await (await this.dbPromise).getAll(STORE_OF[kind])) as SyncRecordMap[K][]
+    return all.filter((v) => v.deletedAt === undefined)
+  }
+
+  /** レコードの保存と送信待ちへの追加を1トランザクションで（rev は下げない） */
+  private async save<K extends SyncKind>(kind: K, record: SyncRecordMap[K]) {
+    const db = await this.dbPromise
+    const tx = db.transaction([STORE_OF[kind], 'outbox'], 'readwrite')
+    const store = tx.objectStore(STORE_OF[kind])
+    const existing = (await store.get(record.id)) as SyncRecordMap[K] | undefined
+    await store.put(rebaseLocalWrite(kind, record, existing))
+    await enqueueIn(tx, kind, record.id)
+    await tx.done
+    this.changes.notify()
   }
 
   /** 物理削除せず墓標を書く */
-  private async tombstone(store: RecordStore, id: string) {
+  private async tombstone(kind: SyncKind, id: string) {
     const db = await this.dbPromise
-    const tx = db.transaction(store, 'readwrite')
-    const cur = await tx.store.get(id)
+    const tx = db.transaction([STORE_OF[kind], 'outbox'], 'readwrite')
+    const store = tx.objectStore(STORE_OF[kind])
+    const cur = await store.get(id)
     if (cur) {
       const now = Date.now()
-      await tx.store.put({ ...cur, deletedAt: now, updatedAt: now })
+      await store.put({ ...cur, deletedAt: now, updatedAt: now })
+      await enqueueIn(tx, kind, id)
+    }
+    await tx.done
+    if (cur) this.changes.notify()
+  }
+
+  async listBatches() {
+    const all = await this.listLive('batch')
+    return all.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  }
+  saveBatch(batch: Batch) {
+    return this.save('batch', batch)
+  }
+  deleteBatch(id: string) {
+    return this.tombstone('batch', id)
+  }
+
+  listReagents() {
+    return this.listLive('reagent')
+  }
+  saveReagent(reagent: Reagent) {
+    return this.save('reagent', reagent)
+  }
+  deleteReagent(id: string) {
+    return this.tombstone('reagent', id)
+  }
+
+  async listStocks() {
+    const all = await this.listLive('stock')
+    return all.sort((a, b) => b.preparedAt.localeCompare(a.preparedAt))
+  }
+  saveStock(stock: Stock) {
+    return this.save('stock', stock)
+  }
+  deleteStock(id: string) {
+    return this.tombstone('stock', id)
+  }
+
+  listPipettes() {
+    return this.listLive('pipette')
+  }
+  savePipette(pipette: Pipette) {
+    return this.save('pipette', pipette)
+  }
+
+  async listSessions() {
+    const all = await this.listLive('session')
+    return all.sort((a, b) => b.startedAt - a.startedAt)
+  }
+  saveSession(session: Session) {
+    return this.save('session', session)
+  }
+  deleteSession(id: string) {
+    return this.tombstone('session', id)
+  }
+
+  // ---- 同期エンジン向け（SyncStore） ----
+
+  async getRecord<K extends SyncKind>(kind: K, id: string) {
+    return (await (await this.dbPromise).get(STORE_OF[kind], id)) as SyncRecordMap[K] | undefined
+  }
+
+  async updateRecord<K extends SyncKind>(
+    kind: K,
+    id: string,
+    fn: (current: SyncRecordMap[K] | undefined) => RecordUpdate<SyncRecordMap[K]>,
+  ) {
+    const db = await this.dbPromise
+    const tx = db.transaction([STORE_OF[kind], 'outbox'], 'readwrite')
+    const store = tx.objectStore(STORE_OF[kind])
+    const before = (await store.get(id)) as SyncRecordMap[K] | undefined
+    const { next, enqueue } = fn(before)
+    if (next !== undefined) await store.put(next)
+    if (enqueue) await enqueueIn(tx, kind, id)
+    await tx.done
+    return { before, after: next ?? before }
+  }
+
+  async enqueue(kind: SyncKind, id: string) {
+    const db = await this.dbPromise
+    const tx = db.transaction(['outbox'], 'readwrite') as unknown as WriteTx
+    await enqueueIn(tx, kind, id)
+    await tx.done
+  }
+
+  async enqueueAll() {
+    const db = await this.dbPromise
+    const kinds = Object.keys(STORE_OF) as SyncKind[]
+    const tx = db.transaction([...kinds.map((k) => STORE_OF[k]), 'outbox'], 'readwrite')
+    for (const kind of kinds) {
+      for (const id of await tx.objectStore(STORE_OF[kind]).getAllKeys()) {
+        await enqueueIn(tx, kind, id)
+      }
     }
     await tx.done
   }
 
-  async listBatches() {
-    const all = await this.listLive('batches')
-    return all.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-  }
-  async saveBatch(batch: Batch) {
-    await (await this.dbPromise).put('batches', batch)
-  }
-  async deleteBatch(id: string) {
-    await this.tombstone('batches', id)
+  async readOutbox(limit: number) {
+    const all = await (await this.dbPromise).getAll('outbox', undefined, limit)
+    return all.sort((a, b) => a.queuedAt - b.queuedAt)
   }
 
-  async listReagents() {
-    return this.listLive('reagents')
-  }
-  async saveReagent(reagent: Reagent) {
-    await (await this.dbPromise).put('reagents', reagent)
-  }
-  async deleteReagent(id: string) {
-    await this.tombstone('reagents', id)
-  }
-
-  async listStocks() {
-    const all = await this.listLive('stocks')
-    return all.sort((a, b) => b.preparedAt.localeCompare(a.preparedAt))
-  }
-  async saveStock(stock: Stock) {
-    await (await this.dbPromise).put('stocks', stock)
-  }
-  async deleteStock(id: string) {
-    await this.tombstone('stocks', id)
+  async ackOutbox(entries: Pick<OutboxEntry, 'key' | 'n'>[]) {
+    const db = await this.dbPromise
+    const tx = db.transaction('outbox', 'readwrite')
+    for (const e of entries) {
+      const cur = await tx.store.get(e.key)
+      if (cur && cur.n === e.n) await tx.store.delete(e.key)
+    }
+    await tx.done
   }
 
-  async listPipettes() {
-    return this.listLive('pipettes')
-  }
-  async savePipette(pipette: Pipette) {
-    await (await this.dbPromise).put('pipettes', pipette)
+  async countOutbox() {
+    return (await this.dbPromise).count('outbox')
   }
 
-  async listSessions() {
-    const all = await this.listLive('sessions')
-    return all.sort((a, b) => b.startedAt - a.startedAt)
+  async getMeta(key: string) {
+    return (await this.dbPromise).get('meta', key)
   }
-  async saveSession(session: Session) {
-    await (await this.dbPromise).put('sessions', session)
+
+  async setMeta(key: string, value: string | null) {
+    const db = await this.dbPromise
+    if (value === null) await db.delete('meta', key)
+    else await db.put('meta', value, key)
   }
-  async deleteSession(id: string) {
-    await this.tombstone('sessions', id)
+
+  onLocalChange(listener: () => void) {
+    return this.changes.subscribe(listener)
   }
 }

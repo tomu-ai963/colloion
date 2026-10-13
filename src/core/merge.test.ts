@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { mergeBatch, mergeLww, mergeRecord, mergeSession, mergeStock, unionUsages } from './merge'
+import {
+  mergeBatch,
+  mergeLww,
+  mergeRecord,
+  mergeSession,
+  mergeStock,
+  preserveAppendOnly,
+  unionUsages,
+} from './merge'
 import type { Batch, Reagent, Stock } from './model'
 import { createSession } from './session'
 
@@ -159,5 +167,27 @@ describe('mergeRecord — 種類ごとの振り分け', () => {
   it('reagent / pipette は後勝ち', () => {
     const m = mergeRecord('reagent', reagent({ name: 'L', updatedAt: T + 1 }), reagent({ name: 'R' }), 'me')
     expect(m.name).toBe('L')
+  })
+})
+
+describe('preserveAppendOnly — 古い状態からの保存で追記のみのデータを失わない', () => {
+  it('Stock: 既存の使用記録と和集合を取る', () => {
+    const existing = stock({ usages: [{ id: 'remote', at: 1, doseMl: 1 }] })
+    const incoming = stock({ usages: [{ id: 'mine', at: 2, doseMl: 1 }], molarity: 2 })
+    const m = preserveAppendOnly('stock', incoming, existing)
+    expect(m.usages.map((u) => u.id)).toEqual(['remote', 'mine'])
+    expect(m.molarity).toBe(2) // それ以外は書き込む側が正
+  })
+
+  it('Batch: 書き込む側に measured が無ければ既存を引き継ぐ', () => {
+    const measured = { coulombs: 1, mg: 1, ppm: 1, etaPct: 90, sessionId: 's' }
+    const m = preserveAppendOnly('batch', batch({ result: { verdict: '良' } }), batch({ measured }))
+    expect(m.measured).toEqual(measured)
+    expect(m.result?.verdict).toBe('良')
+  })
+
+  it('既存が無ければそのまま', () => {
+    const r = reagent({})
+    expect(preserveAppendOnly('reagent', r, undefined)).toBe(r)
   })
 })

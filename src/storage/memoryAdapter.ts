@@ -1,77 +1,157 @@
 import { newId } from '../core/id'
+import type { SyncKind, SyncRecordMap } from '../core/merge'
 import type { Batch, Pipette, Reagent, Stock } from '../core/model'
 import type { Session } from '../core/session'
 import type { StorageAdapter } from './StorageAdapter'
+import {
+  ChangeNotifier,
+  outboxKey,
+  rebaseLocalWrite,
+  type OutboxEntry,
+  type RecordUpdate,
+  type SyncStore,
+} from './SyncStore'
 
-type Tombstonable = { deletedAt?: number; updatedAt: number }
-
-const live = <T extends Tombstonable>(map: Map<string, T>): T[] =>
-  [...map.values()].filter((v) => v.deletedAt === undefined)
-
-function tombstone<T extends Tombstonable>(map: Map<string, T>, id: string): void {
-  const cur = map.get(id)
-  if (!cur) return
-  const now = Date.now()
-  map.set(id, { ...cur, deletedAt: now, updatedAt: now })
-}
+type Tables = { [K in SyncKind]: Map<string, SyncRecordMap[K]> }
 
 /** テスト・IndexedDB 非対応環境向けのインメモリ実装 */
-export class MemoryAdapter implements StorageAdapter {
+export class MemoryAdapter implements StorageAdapter, SyncStore {
   private deviceId = newId()
-  private batches = new Map<string, Batch>()
-  private reagents = new Map<string, Reagent>()
-  private stocks = new Map<string, Stock>()
-  private pipettes = new Map<string, Pipette>()
-  private sessions = new Map<string, Session>()
+  private tables: Tables = {
+    batch: new Map(),
+    reagent: new Map(),
+    stock: new Map(),
+    pipette: new Map(),
+    session: new Map(),
+  }
+  private outbox = new Map<string, OutboxEntry>()
+  private meta = new Map<string, string>()
+  private changes = new ChangeNotifier()
 
   async getDeviceId() {
     return this.deviceId
   }
 
+  // ---- アプリ向け（StorageAdapter） ----
+
+  private live<K extends SyncKind>(kind: K): SyncRecordMap[K][] {
+    return [...this.tables[kind].values()].filter((v) => v.deletedAt === undefined)
+  }
+
+  private save<K extends SyncKind>(kind: K, record: SyncRecordMap[K]) {
+    const table = this.tables[kind] as Map<string, SyncRecordMap[K]>
+    table.set(record.id, structuredClone(rebaseLocalWrite(kind, record, table.get(record.id))))
+    this.enqueueSync(kind, record.id)
+    this.changes.notify()
+  }
+
+  private tombstone(kind: SyncKind, id: string) {
+    const table = this.tables[kind] as Map<string, SyncRecordMap[SyncKind]>
+    const cur = table.get(id)
+    if (!cur) return
+    const now = Date.now()
+    table.set(id, { ...cur, deletedAt: now, updatedAt: now })
+    this.enqueueSync(kind, id)
+    this.changes.notify()
+  }
+
   async listBatches() {
-    return live(this.batches).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    return this.live('batch').sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   }
   async saveBatch(batch: Batch) {
-    this.batches.set(batch.id, structuredClone(batch))
+    this.save('batch', batch)
   }
   async deleteBatch(id: string) {
-    tombstone(this.batches, id)
+    this.tombstone('batch', id)
   }
 
   async listReagents() {
-    return live(this.reagents)
+    return this.live('reagent')
   }
   async saveReagent(reagent: Reagent) {
-    this.reagents.set(reagent.id, structuredClone(reagent))
+    this.save('reagent', reagent)
   }
   async deleteReagent(id: string) {
-    tombstone(this.reagents, id)
+    this.tombstone('reagent', id)
   }
 
   async listStocks() {
-    return live(this.stocks).sort((a, b) => b.preparedAt.localeCompare(a.preparedAt))
+    return this.live('stock').sort((a, b) => b.preparedAt.localeCompare(a.preparedAt))
   }
   async saveStock(stock: Stock) {
-    this.stocks.set(stock.id, structuredClone(stock))
+    this.save('stock', stock)
   }
   async deleteStock(id: string) {
-    tombstone(this.stocks, id)
+    this.tombstone('stock', id)
   }
 
   async listPipettes() {
-    return live(this.pipettes)
+    return this.live('pipette')
   }
   async savePipette(pipette: Pipette) {
-    this.pipettes.set(pipette.id, structuredClone(pipette))
+    this.save('pipette', pipette)
   }
 
   async listSessions() {
-    return live(this.sessions).sort((a, b) => b.startedAt - a.startedAt)
+    return this.live('session').sort((a, b) => b.startedAt - a.startedAt)
   }
   async saveSession(session: Session) {
-    this.sessions.set(session.id, structuredClone(session))
+    this.save('session', session)
   }
   async deleteSession(id: string) {
-    tombstone(this.sessions, id)
+    this.tombstone('session', id)
+  }
+
+  // ---- 同期エンジン向け（SyncStore） ----
+
+  private enqueueSync(kind: SyncKind, id: string) {
+    const key = outboxKey(kind, id)
+    const n = (this.outbox.get(key)?.n ?? 0) + 1
+    this.outbox.set(key, { key, kind, id, n, queuedAt: Date.now() })
+  }
+
+  async getRecord<K extends SyncKind>(kind: K, id: string) {
+    const v = this.tables[kind].get(id)
+    return v === undefined ? undefined : structuredClone(v)
+  }
+  async updateRecord<K extends SyncKind>(
+    kind: K,
+    id: string,
+    fn: (current: SyncRecordMap[K] | undefined) => RecordUpdate<SyncRecordMap[K]>,
+  ) {
+    const table = this.tables[kind] as Map<string, SyncRecordMap[K]>
+    const cur = table.get(id)
+    const before = cur === undefined ? undefined : structuredClone(cur)
+    const { next, enqueue } = fn(before === undefined ? undefined : structuredClone(before))
+    if (next !== undefined) table.set(id, structuredClone(next))
+    if (enqueue) this.enqueueSync(kind, id)
+    return { before, after: next ?? before }
+  }
+  async enqueue(kind: SyncKind, id: string) {
+    this.enqueueSync(kind, id)
+  }
+  async enqueueAll() {
+    for (const kind of Object.keys(this.tables) as SyncKind[]) {
+      for (const id of this.tables[kind].keys()) this.enqueueSync(kind, id)
+    }
+  }
+  async readOutbox(limit: number) {
+    return [...this.outbox.values()].sort((a, b) => a.queuedAt - b.queuedAt).slice(0, limit)
+  }
+  async ackOutbox(entries: Pick<OutboxEntry, 'key' | 'n'>[]) {
+    for (const e of entries) if (this.outbox.get(e.key)?.n === e.n) this.outbox.delete(e.key)
+  }
+  async countOutbox() {
+    return this.outbox.size
+  }
+  async getMeta(key: string) {
+    return this.meta.get(key)
+  }
+  async setMeta(key: string, value: string | null) {
+    if (value === null) this.meta.delete(key)
+    else this.meta.set(key, value)
+  }
+  onLocalChange(listener: () => void) {
+    return this.changes.subscribe(listener)
   }
 }

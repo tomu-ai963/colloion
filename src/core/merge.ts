@@ -95,6 +95,30 @@ export function mergeSession(local: Session, remote: Session, selfDeviceId: stri
   return withRev(winner, local, remote)
 }
 
+/**
+ * アプリからの保存（ローカルの書き込み）で、追記のみのデータを失わないようにする。
+ * アプリの状態は同期で届いた変更を反映する前の古い版のことがあり、
+ * そのまま保存すると他端末の使用記録（Stock.usages）や measured が消えるため。
+ * それ以外のフィールドは書き込む側（incoming）が正。
+ */
+export function preserveAppendOnly<K extends SyncKind>(
+  kind: K,
+  incoming: SyncRecordMap[K],
+  existing: SyncRecordMap[K] | undefined,
+): SyncRecordMap[K] {
+  if (!existing) return incoming
+  if (kind === 'stock') {
+    const s = incoming as Stock
+    return { ...s, usages: unionUsages((existing as Stock).usages, s.usages) } as SyncRecordMap[K]
+  }
+  if (kind === 'batch') {
+    const b = incoming as Batch
+    const measured = b.measured ?? (existing as Batch).measured
+    return (measured ? { ...b, measured } : b) as SyncRecordMap[K]
+  }
+  return incoming
+}
+
 /** 種類ごとのマージ規則を引く */
 export function mergeRecord<K extends SyncKind>(
   kind: K,

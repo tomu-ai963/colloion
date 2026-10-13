@@ -65,6 +65,8 @@ export interface AppState {
   pipette: Pipette
 
   init(): Promise<void>
+  /** 同期で届いた変更を反映する（保存済みデータだけを読み直し、編集中の条件は触らない） */
+  reload(): Promise<void>
   setMode(mode: Mode): void
   setWater(patch: Partial<WaterConfig>): void
   setElectrode(patch: Partial<ElectrodeConfig>): void
@@ -167,6 +169,24 @@ export const useAppStore = create<AppState>((set, get) => ({
       label: batchLabel(batches),
       additive: { ...get().additive, calibMlPer20: pipette.mlPer20Drops },
     })
+  },
+
+  async reload() {
+    const [reagents, batches, stocks, pipettes] = await Promise.all([
+      storage.listReagents(),
+      storage.listBatches(),
+      storage.listStocks(),
+      storage.listPipettes(),
+    ])
+    const pipette = pipettes[0] ?? get().pipette
+    set((s) => ({
+      reagents,
+      batches,
+      stocks,
+      pipette,
+      label: batchLabel(batches),
+      additive: { ...s.additive, calibMlPer20: pipette.mlPer20Drops },
+    }))
   },
 
   setMode: (mode) => set({ mode }),

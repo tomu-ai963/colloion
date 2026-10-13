@@ -90,3 +90,72 @@ describe('IndexedDbAdapter: v2 → v3 の移行', () => {
     expect(tomb.updatedAt).toBe(tomb.deletedAt)
   })
 })
+
+describe('IndexedDbAdapter: 送信待ちキュー（v4）', () => {
+  const reagent = (updatedAt: number) => ({
+    id: 'r1',
+    name: 'x',
+    formula: 'NaCl',
+    mw: 58.44,
+    purityPct: 100,
+    role: '電解質' as const,
+    updatedAt,
+  })
+
+  it('v3 の outbox（保存ごとに1行）は作り直され、既存データは残る', async () => {
+    const v3 = await openDB('v3-test', 3, {
+      upgrade(db) {
+        for (const s of ['batches', 'reagents', 'stocks', 'pipettes', 'sessions']) {
+          db.createObjectStore(s, { keyPath: 'id' })
+        }
+        db.createObjectStore('meta')
+        db.createObjectStore('outbox', { keyPath: 'seq', autoIncrement: true })
+      },
+    })
+    await v3.put('meta', 'dev-v3', 'deviceId')
+    await v3.put('reagents', reagent(5))
+    await v3.add('outbox', { kind: 'reagent', id: 'r1', queuedAt: 1 })
+    v3.close()
+
+    const st = new IndexedDbAdapter('v3-test')
+    expect(await st.getDeviceId()).toBe('dev-v3')
+    expect(await st.listReagents()).toHaveLength(1)
+    expect(await st.countOutbox()).toBe(0)
+    await st.saveReagent(reagent(6))
+    expect((await st.readOutbox(10))[0]).toMatchObject({ key: 'reagent:r1', n: 1 })
+  })
+
+  it('同じレコードを何度保存しても送信待ちは1件で、版番号 n が進む', async () => {
+    const st = new IndexedDbAdapter('outbox-test')
+    for (let i = 0; i < 10; i++) await st.saveReagent(reagent(i))
+    const entries = await st.readOutbox(100)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]!.n).toBe(10)
+
+    // 古い版番号での ack は消さない（送信中に書き込みがあった場合）
+    await st.ackOutbox([{ key: 'reagent:r1', n: 9 }])
+    expect(await st.countOutbox()).toBe(1)
+    await st.ackOutbox([{ key: 'reagent:r1', n: 10 }])
+    expect(await st.countOutbox()).toBe(0)
+  })
+
+  it('保存で rev を下げない（アプリの状態は rev を知らないことがある）', async () => {
+    const st = new IndexedDbAdapter('rev-test')
+    await st.saveReagent(reagent(1))
+    await st.updateRecord('reagent', 'r1', (cur) => ({ next: { ...cur!, rev: 42 } }))
+    await st.saveReagent(reagent(2)) // rev 無しで保存
+    expect((await st.getRecord('reagent', 'r1'))!.rev).toBe(42)
+  })
+
+  it('アプリからの書き込みを通知する', async () => {
+    const st = new IndexedDbAdapter('notify-test')
+    let count = 0
+    const off = st.onLocalChange(() => count++)
+    await st.saveReagent(reagent(1))
+    await st.deleteReagent('r1')
+    await st.deleteReagent('missing') // 何も書かないので通知しない
+    off()
+    await st.saveReagent(reagent(2))
+    expect(count).toBe(2)
+  })
+})
