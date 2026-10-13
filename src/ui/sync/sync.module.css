@@ -1,0 +1,151 @@
+/* ---------- 上部バーの同期バッジ ---------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink2);
+  font-family: var(--sans);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  padding: 6px 12px;
+  border-radius: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.16s;
+}
+.badge:hover {
+  border-color: var(--gold-soft);
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.ok {
+  background: var(--gold);
+}
+.busy {
+  background: var(--ink3);
+}
+.warn {
+  background: var(--warn);
+}
+.badgeWarn {
+  composes: badge;
+  color: var(--warn);
+  border-color: var(--warn);
+  background: var(--warn-wash);
+}
+
+/* ---------- 他端末の変更を反映したお知らせ ---------- */
+.toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 40;
+  background: var(--ink);
+  color: #fff;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  padding: 10px 16px;
+  border-radius: 2px;
+  max-width: calc(100vw - 40px);
+}
+
+/* ---------- アカウントのダイアログ ---------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 14px 0 6px;
+}
+.field label {
+  font-size: 12px;
+  color: var(--ink2);
+  letter-spacing: 0.06em;
+}
+.input {
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  padding: 9px 11px;
+  border-radius: 2px;
+  width: 100%;
+}
+.input:focus {
+  border-color: var(--gold);
+  outline: none;
+}
+.code {
+  composes: input;
+  font-family: var(--mono);
+  font-size: 22px;
+  letter-spacing: 0.4em;
+  text-align: center;
+}
+.note {
+  font-size: 12px;
+  color: var(--ink2);
+  line-height: 1.8;
+  margin: 10px 0 0;
+}
+.error {
+  font-size: 12px;
+  color: var(--warn);
+  margin: 8px 0 0;
+}
+.caution {
+  border-left: 2px solid var(--warn);
+  background: var(--warn-wash);
+  font-size: 12px;
+  line-height: 1.8;
+  padding: 8px 12px;
+  margin: 12px 0 0;
+}
+.info {
+  border-left: 2px solid var(--gold);
+  background: var(--gold-wash);
+  font-size: 12px;
+  line-height: 1.8;
+  padding: 8px 12px;
+  margin: 12px 0 0;
+}
+.rows {
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+.rows div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line2);
+}
+.rows dt {
+  color: var(--ink2);
+}
+.rows dd {
+  margin: 0;
+  text-align: right;
+  word-break: break-all;
+}
+.linkBtn {
+  border: 0;
+  background: none;
+  color: var(--gold);
+  font-size: 12px;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.linkBtn:disabled {
+  color: var(--ink3);
+  cursor: default;
+  text-decoration: none;
+}

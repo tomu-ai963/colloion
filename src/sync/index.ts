@@ -8,11 +8,14 @@ import type { SyncTransport } from './protocol'
 export interface SyncState {
   enabled: boolean
   status: SyncStatus
+  /** 他端末の変更をこの端末に反映した時刻（画面に短く知らせる） */
+  lastAppliedAt: number | null
 }
 
 export const useSyncStore = create<SyncState>(() => ({
   enabled: false,
   status: { phase: 'idle', pending: 0, lastSyncedAt: null, error: null },
+  lastAppliedAt: null,
 }))
 
 let engine: SyncEngine | null = null
@@ -24,7 +27,10 @@ let engine: SyncEngine | null = null
 export async function startSync(transport: SyncTransport, userId: string): Promise<SyncEngine> {
   stopSync()
   const e = new SyncEngine(getStorage(), transport, {
-    onApplied: () => void useAppStore.getState().reload(),
+    onApplied: () => {
+      useSyncStore.setState({ lastAppliedAt: Date.now() })
+      void useAppStore.getState().reload()
+    },
     onStatus: (status) => useSyncStore.setState({ status }),
   })
   engine = e

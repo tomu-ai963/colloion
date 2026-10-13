@@ -7,6 +7,7 @@ import { useAuthStore } from '../auth/store'
 import s from './App.module.css'
 import { RecoveryDialog } from './run/RecoveryDialog'
 import { RunScreen } from './run/RunScreen'
+import { SyncBadge } from './sync/SyncBadge'
 import { AdditivePanel } from './panels/AdditivePanel'
 import { ElectrodePanel } from './panels/ElectrodePanel'
 import { LogPanel } from './panels/LogPanel'
@@ -170,6 +171,7 @@ export function App() {
           </button>
         </div>
         <div className={s.batchId}>BATCH&nbsp;&nbsp;{store.label}</div>
+        <SyncBadge />
         <button type="button" className={s.btnSolid} onClick={() => void startRun()}>
           通電を開始
         </button>

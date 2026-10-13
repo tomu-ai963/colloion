@@ -61,6 +61,19 @@
   background: #8e6f21;
   border-color: #8e6f21;
 }
+.btnGhost:disabled,
+.btnGhost:disabled:hover {
+  opacity: 0.45;
+  cursor: default;
+  background: transparent;
+  color: var(--gold);
+}
+.btnSolid:disabled,
+.btnSolid:disabled:hover {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: #fff;
+}
 
 /* mode switch */
 .modeSw {
