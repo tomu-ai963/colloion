@@ -11,10 +11,19 @@ import type { SyncKind, SyncRecordMap } from '../core/merge'
 
 export const SYNC_KINDS: readonly SyncKind[] = ['batch', 'reagent', 'stock', 'pipette', 'session']
 
-/** 1 回の push で送る最大件数 */
-export const PUSH_BATCH_LIMIT = 100
+/**
+ * 1 回の push で送る最大件数。Worker は 1 件につき 1 文 + 競合の読み直し 1 文を D1 に投げる。
+ * D1 の「1 呼び出しあたりのクエリ数」は Workers Free で 50 なので、それに収める。
+ */
+export const PUSH_BATCH_LIMIT = 40
 /** 1 回の pull で返す最大件数 */
 export const PULL_PAGE_LIMIT = 200
+/** 1 レコードの JSON の最大バイト数（通電セッションの区間・マークが増えても収まる大きさ） */
+export const MAX_RECORD_BYTES = 256 * 1024
+/** push のリクエスト本文の最大バイト数 */
+export const MAX_PUSH_BYTES = 4 * 1024 * 1024
+/** レコード ID に使える文字（UUID・seed-*・default-pipette・フォールバック ID） */
+export const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
 
 export type AnyRecord = SyncRecordMap[SyncKind]
 

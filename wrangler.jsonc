@@ -1,0 +1,36 @@
+// colloion Worker（Phase 3）: フロント（dist/）の配信と同期 API（/api/*）を同じオリジンで提供する。
+// 本番のリソース作成（d1 create）・カスタムドメイン設定・deploy は、とむの確認を取ってから行う。
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "colloion",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true,
+    "redact_query_string": true,
+    "logs": { "invocation_logs": false }
+  },
+  // vite build --base / の出力（npm run build:worker）。/api/* だけ Worker を先に通す
+  "assets": {
+    "directory": "./dist/",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": {
+    // Neon Managed Better Auth の URL（公開情報。JWKS の取得と iss/aud の照合に使う）。Step 4 で設定する
+    "NEON_AUTH_BASE_URL": "",
+    // 本番は同一オリジンなので空。開発時は .dev.vars で http://localhost:5173 を入れる
+    "ALLOWED_ORIGINS": ""
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "colloion",
+      // ローカル（--local）専用の仮 ID。本番は `wrangler d1 create colloion` の出力に置き換える
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

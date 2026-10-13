@@ -1,0 +1,4 @@
+# ローカル開発（wrangler dev）用。コピーして .dev.vars にする（.dev.vars は gitignore 済み）。
+# ここに入るのは公開情報だけ。この Worker は秘密情報を持たない。
+ALLOWED_ORIGINS=http://localhost:5173
+NEON_AUTH_BASE_URL=
