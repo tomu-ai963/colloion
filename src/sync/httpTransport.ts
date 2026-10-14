@@ -1,6 +1,7 @@
 import {
   SyncAuthError,
   SyncForbiddenError,
+  SyncQuotaError,
   type PullResponse,
   type PushRequest,
   type PushResponse,
@@ -15,7 +16,7 @@ export interface HttpTransportOptions {
   fetch?: typeof fetch
 }
 
-/** サーバーが返したエラー（401 以外）。エンジンはこれを受けたら間隔を空けて再試行する */
+/** サーバーが返したエラー（401・403・507 以外）。エンジンはこれを受けたら間隔を空けて再試行する */
 export class SyncHttpError extends Error {
   constructor(readonly status: number) {
     super(`同期サーバーがエラーを返しました（${status}）`)
@@ -51,6 +52,7 @@ export class HttpTransport implements SyncTransport {
     })
     if (res.status === 401) throw new SyncAuthError()
     if (res.status === 403) throw new SyncForbiddenError()
+    if (res.status === 507) throw new SyncQuotaError()
     if (!res.ok) throw new SyncHttpError(res.status)
     return (await res.json()) as T
   }

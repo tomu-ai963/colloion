@@ -21,6 +21,7 @@ import {
   PUSH_BATCH_LIMIT,
   SyncAuthError,
   SyncForbiddenError,
+  SyncQuotaError,
   type AnyRecord,
   type PushChange,
   type SyncTransport,
@@ -37,7 +38,15 @@ const RETRY_MAX_MS = 5 * 60_000
 const META_CURSOR = 'pullCursor'
 const META_USER = 'syncUserId'
 
-export type SyncPhase = 'idle' | 'syncing' | 'offline' | 'error' | 'unauthorized' | 'forbidden'
+export type SyncPhase =
+  | 'idle'
+  | 'syncing'
+  | 'offline'
+  | 'error'
+  | 'unauthorized'
+  | 'forbidden'
+  /** 容量上限。pull は済んでいる。間隔を空けた再試行はせず、書き込みと定期の同期で試し直す */
+  | 'quota'
 
 export interface SyncStatus {
   phase: SyncPhase
@@ -144,6 +153,8 @@ export class SyncEngine {
         this.setStatus({ phase: 'unauthorized', error: e.message })
       } else if (e instanceof SyncForbiddenError) {
         this.setStatus({ phase: 'forbidden', error: e.message })
+      } else if (e instanceof SyncQuotaError) {
+        this.setStatus({ phase: 'quota', error: e.message })
       } else {
         this.failures++
         this.setStatus({

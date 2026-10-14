@@ -21,6 +21,8 @@ export function syncLabel(status: SyncStatus): { tone: SyncTone; text: string } 
       return { tone: 'warn', text: '再ログインが必要' }
     case 'forbidden':
       return { tone: 'warn', text: '同期の対象外' }
+    case 'quota':
+      return { tone: 'warn', text: `容量上限${pending}` }
     case 'idle':
       if (status.pending > 0) return { tone: 'busy', text: `送信待ち ${status.pending}` }
       if (status.lastSyncedAt !== null) return { tone: 'ok', text: `同期済み ${hhmm(status.lastSyncedAt)}` }
@@ -41,6 +43,8 @@ export function syncDetail(status: SyncStatus): string {
       return 'ログインの有効期限が切れました。もう一度ログインしてください。'
     case 'forbidden':
       return 'このアカウントは、この同期サーバーで同期できる対象になっていません。記録はこの端末に保存されています。'
+    case 'quota':
+      return '同期サーバーに置ける量の上限に達したため、新しい変更を送れません。記録はこの端末に保存されています。削除してもサーバーの使用量は減りません。'
     case 'idle':
       if (status.pending > 0) return `${status.pending} 件の変更を送る準備をしています。`
       return status.lastSyncedAt !== null

@@ -22,6 +22,13 @@ export const PULL_PAGE_LIMIT = 200
 export const MAX_RECORD_BYTES = 256 * 1024
 /** push のリクエスト本文の最大バイト数 */
 export const MAX_PUSH_BYTES = 4 * 1024 * 1024
+/**
+ * ユーザーごとの容量上限（サーバーに置ける量）。墓標も数える（削除しても減らない）。
+ * D1 は Free で 1 DB 500 MB なので、上限いっぱいでも 10 人程度は収まる大きさにしてある。
+ * 超える push は丸ごと 507 で断る。使用量を増やさない push（編集で小さくなる・削除）は通る
+ */
+export const MAX_USER_RECORDS = 10_000
+export const MAX_USER_BYTES = 32 * 1024 * 1024
 /** レコード ID に使える文字（UUID・seed-*・default-pipette・フォールバック ID） */
 export const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
 
@@ -73,6 +80,17 @@ export class SyncForbiddenError extends Error {
   constructor() {
     super('このアカウントは同期の対象外です')
     this.name = 'SyncForbiddenError'
+  }
+}
+
+/**
+ * 容量上限に達した（507）。送信待ちは端末に残る。エンジンは間隔を空けた再試行をしないが、
+ * pull と使用量を増やさない push は通るので、書き込みや定期の同期では試し直す
+ */
+export class SyncQuotaError extends Error {
+  constructor() {
+    super('同期サーバーの容量上限に達しました')
+    this.name = 'SyncQuotaError'
   }
 }
 

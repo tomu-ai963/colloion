@@ -176,6 +176,10 @@ describe('syncLabel', () => {
     })
     expect(syncLabel(status({ phase: 'unauthorized' })).text).toBe('再ログインが必要')
     expect(syncLabel(status({ phase: 'forbidden' }))).toEqual({ tone: 'warn', text: '同期の対象外' })
+    expect(syncLabel(status({ phase: 'quota', pending: 2 }))).toEqual({
+      tone: 'warn',
+      text: '容量上限（送信待ち 2）',
+    })
   })
 })
 

@@ -7,16 +7,23 @@
  * D1 は batch を 1 トランザクションで直列に実行するので、同じユーザーの push が
  * 並行しても採番が重複したり、確認と書き込みの間に割り込まれたりしない。
  * 書けたかどうかは RETURNING の行の有無で分かる。
+ *
+ * 容量上限（MAX_USER_RECORDS / MAX_USER_BYTES）は書く前に確かめる。使用量は sync_usage
+ * （migrations/0003 のトリガーが保つ合計）から読み、この push で増える分を足して判定する。
+ * 確認と書き込みは別の呼び出しなので、同じユーザーの push が並行すると 1 回分（最大
+ * PUSH_BATCH_LIMIT 件・MAX_PUSH_BYTES）まで上限を超えうる。DB の容量を守る目的には足りる。
  */
 
 import type { SyncKind } from '../src/core/merge'
-import type {
-  AnyRecord,
-  PullChange,
-  PullResponse,
-  PushChange,
-  PushResponse,
-  PushResult,
+import {
+  MAX_USER_BYTES,
+  MAX_USER_RECORDS,
+  type AnyRecord,
+  type PullChange,
+  type PullResponse,
+  type PushChange,
+  type PushResponse,
+  type PushResult,
 } from '../src/sync/protocol'
 import type { D1Like } from './db'
 
@@ -45,10 +52,75 @@ function bodyOf(record: AnyRecord): string {
 
 const toRecord = (row: RecordRow): AnyRecord => ({ ...JSON.parse(row.body), rev: row.rev }) as AnyRecord
 
-export async function push(db: D1Like, userId: string, changes: PushChange[]): Promise<PushResponse> {
+/** sync_usage と同じ測り方（本文の UTF-8 のバイト数） */
+const utf8Bytes = (s: string): number => new TextEncoder().encode(s).byteLength
+
+export interface Quota {
+  records: number
+  bytes: number
+}
+
+export const DEFAULT_QUOTA: Quota = { records: MAX_USER_RECORDS, bytes: MAX_USER_BYTES }
+
+/** 容量上限を超える push。usage は push 前の使用量 */
+export class QuotaExceeded extends Error {
+  constructor(
+    readonly usage: Quota,
+    readonly limit: Quota,
+  ) {
+    super('quota exceeded')
+    this.name = 'QuotaExceeded'
+  }
+}
+
+/**
+ * この push で使用量がどれだけ増えるかを測り、上限を超えるなら QuotaExceeded を投げる。
+ * 競合して書かれないものも書かれる前提で数える（多めに見積もる側に倒す）。
+ * 増えない側（件数が増えない・バイト数が減る）の項目は上限を超えていても止めない
+ * （上限に達したあとも、編集で小さくすることはできる）。
+ */
+async function checkQuota(
+  db: D1Like,
+  userId: string,
+  changes: PushChange[],
+  bodies: string[],
+  quota: Quota,
+): Promise<void> {
+  const [usageRows, existing] = await Promise.all([
+    db
+      .prepare('SELECT records, bytes FROM sync_usage WHERE user_id = ?1')
+      .bind(userId)
+      .all<Quota>(),
+    fetchSizes(db, userId, changes),
+  ])
+  const usage = usageRows.results[0] ?? { records: 0, bytes: 0 }
+  let addRecords = 0
+  let addBytes = 0
+  changes.forEach((c, i) => {
+    const before = existing.get(`${c.kind}:${c.id}`)
+    if (before === undefined) addRecords++
+    addBytes += utf8Bytes(bodies[i]!) - (before ?? 0)
+  })
+  if (
+    (addRecords > 0 && usage.records + addRecords > quota.records) ||
+    (addBytes > 0 && usage.bytes + addBytes > quota.bytes)
+  ) {
+    throw new QuotaExceeded(usage, quota)
+  }
+}
+
+export async function push(
+  db: D1Like,
+  userId: string,
+  changes: PushChange[],
+  quota: Quota = DEFAULT_QUOTA,
+): Promise<PushResponse> {
   if (changes.length === 0) return { results: [] }
 
-  const statements = changes.map((c) =>
+  const bodies = changes.map((c) => bodyOf(c.record))
+  await checkQuota(db, userId, changes, bodies, quota)
+
+  const statements = changes.map((c, i) =>
     db
       .prepare(UPSERT_SQL)
       .bind(
@@ -58,7 +130,7 @@ export async function push(db: D1Like, userId: string, changes: PushChange[]): P
         c.baseRev,
         Math.trunc(c.record.updatedAt),
         c.record.deletedAt !== undefined ? 1 : 0,
-        bodyOf(c.record),
+        bodies[i],
       ),
   )
   const written = await db.batch<{ rev: number }>(statements)
@@ -82,20 +154,34 @@ export async function push(db: D1Like, userId: string, changes: PushChange[]): P
   return { results: results.filter((r): r is PushResult => r !== null) }
 }
 
-/** (kind, id) の組をまとめて 1 文で読む（D1 の 1 文あたりのパラメータ上限 100 に収まる件数で呼ぶ） */
-async function fetchRecords(
-  db: D1Like,
-  userId: string,
-  keys: { kind: SyncKind; id: string }[],
-): Promise<Map<string, RecordRow>> {
+type Key = { kind: SyncKind; id: string }
+
+/**
+ * (kind, id) の組で絞る文を作る（D1 の 1 文あたりのパラメータ上限 100 に収まる件数で呼ぶ）。
+ * columns は SELECT する列
+ */
+function selectByKeys(db: D1Like, userId: string, keys: Key[], columns: string) {
   const values = keys.map((_, i) => `(?${i * 2 + 2}, ?${i * 2 + 3})`).join(', ')
-  const { results } = await db
-    .prepare(
-      `SELECT kind, id, rev, body FROM records WHERE user_id = ?1 AND (kind, id) IN (VALUES ${values})`,
-    )
+  return db
+    .prepare(`SELECT ${columns} FROM records WHERE user_id = ?1 AND (kind, id) IN (VALUES ${values})`)
     .bind(userId, ...keys.flatMap((k) => [k.kind, k.id]))
-    .all<RecordRow>()
+}
+
+/** (kind, id) の組をまとめて 1 文で読む */
+async function fetchRecords(db: D1Like, userId: string, keys: Key[]): Promise<Map<string, RecordRow>> {
+  const { results } = await selectByKeys(db, userId, keys, 'kind, id, rev, body').all<RecordRow>()
   return new Map(results.map((r) => [`${r.kind}:${r.id}`, r]))
+}
+
+/** サーバーにある版の本文のバイト数（無いものは入らない） */
+async function fetchSizes(db: D1Like, userId: string, keys: Key[]): Promise<Map<string, number>> {
+  const { results } = await selectByKeys(
+    db,
+    userId,
+    keys,
+    'kind, id, length(CAST(body AS BLOB)) AS bytes',
+  ).all<Key & { bytes: number }>()
+  return new Map(results.map((r) => [`${r.kind}:${r.id}`, r.bytes]))
 }
 
 export async function pull(

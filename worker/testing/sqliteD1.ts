@@ -16,6 +16,11 @@ type SQLInputValue = NodeSqlite.SQLInputValue
 
 const MIGRATIONS_DIR = join(import.meta.dirname, '..', '..', 'migrations')
 
+const migrationFiles = (): string[] =>
+  readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+
 class Statement implements D1PreparedStatementLike {
   constructor(
     private owner: SqliteD1,
@@ -44,10 +49,16 @@ export class SqliteD1 implements D1Like {
   /** 実行した文の数（D1 の「1 呼び出しあたりのクエリ数」を確かめる用） */
   queries = 0
 
-  constructor() {
-    for (const f of readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort()) {
-      this.db.exec(readFileSync(join(MIGRATIONS_DIR, f), 'utf8'))
+  /** until を渡すと、そのファイル名より前のマイグレーションだけを流す（適用前のデータを作る用） */
+  constructor(until?: string) {
+    for (const f of migrationFiles().filter((f) => until === undefined || f < until)) {
+      this.migrate(f)
     }
+  }
+
+  /** migrations/ の SQL を 1 つ流す */
+  migrate(file: string): void {
+    this.db.exec(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'))
   }
 
   prepare(sql: string): D1PreparedStatementLike {

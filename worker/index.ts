@@ -7,7 +7,7 @@
  *
  *   GET  /api/health
  *   GET  /api/sync/pull?since=<rev>
- *   POST /api/sync/push   { changes: PushChange[] }
+ *   POST /api/sync/push   { changes: PushChange[] }（容量上限を超えるなら 507）
  *   *    /api/auth/*      Neon Auth への中継（worker/authProxy.ts。同一オリジン専用で CORS は付けない）
  */
 
@@ -24,7 +24,7 @@ import { AuthProxyError, proxyAuth } from './authProxy'
 import { readText } from './body'
 import type { D1Like } from './db'
 import { enforceRateLimit, RateLimited } from './rateLimit'
-import { pull, push } from './sync'
+import { pull, push, QuotaExceeded, type Quota } from './sync'
 import { BadRequest, parsePushBody, parseSince } from './validate'
 
 export interface Env {
@@ -51,6 +51,8 @@ export interface Deps {
   authConfig?: AuthConfig
   /** 認証の中継が上流（Neon）を叩くときの fetch */
   fetch?: typeof fetch
+  /** 容量上限（テストで小さくする用。本番は DEFAULT_QUOTA） */
+  quota?: Quota
 }
 
 const json = (status: number, body: unknown, headers: HeadersInit = {}): Response =>
@@ -110,7 +112,7 @@ async function handleApi(request: Request, env: Env, url: URL, deps: Deps): Prom
     return json(415, { error: 'unsupported_media_type' })
   }
   const changes = parsePushBody(await readText(request, MAX_PUSH_BYTES))
-  return json(200, await push(env.DB, userId, changes))
+  return json(200, await push(env.DB, userId, changes, deps.quota))
 }
 
 export async function handle(request: Request, env: Env, deps: Deps = {}): Promise<Response> {
@@ -155,6 +157,10 @@ function errorResponse(e: unknown): Response {
   if (e instanceof AuthProxyError) {
     const error = { 404: 'not_found', 405: 'method_not_allowed', 503: 'auth_not_configured' }
     return json(e.status, { error: error[e.status] })
+  }
+  if (e instanceof QuotaExceeded) {
+    // 507 Insufficient Storage。使用量は本人のものだけなので返してよい
+    return json(507, { error: 'quota_exceeded', usage: e.usage, limit: e.limit })
   }
   if (e instanceof BadRequest) {
     return json(e.status, { error: 'bad_request', message: e.message })

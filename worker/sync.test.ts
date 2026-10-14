@@ -9,7 +9,7 @@ import { HttpTransport } from '../src/sync/httpTransport'
 import { MemorySyncServer } from '../src/sync/memoryServer'
 import { PUSH_BATCH_LIMIT, type PushChange } from '../src/sync/protocol'
 import { handle, type Env } from './index'
-import { pull, push } from './sync'
+import { pull, push, QuotaExceeded, type Quota } from './sync'
 import { createTestAuth, type TestAuth } from './testing/auth'
 import { SqliteD1 } from './testing/sqliteD1'
 
@@ -145,6 +145,85 @@ describe('D1 実装: pull', () => {
   })
 })
 
+describe('D1 実装: 容量上限', () => {
+  const usage = (userId = 'user-a') =>
+    db.db.prepare('SELECT records, bytes FROM sync_usage WHERE user_id = ?').get(userId) as Quota | undefined
+  /** トリガーを通さずに数え直した値 */
+  const recount = (userId = 'user-a') =>
+    db.db
+      .prepare(
+        'SELECT COUNT(*) AS records, SUM(length(CAST(body AS BLOB))) AS bytes FROM records WHERE user_id = ?',
+      )
+      .get(userId) as Quota | undefined
+  const count = () => (db.db.prepare('SELECT COUNT(*) AS n FROM records').get() as { n: number }).n
+
+  it('使用量（sync_usage）は作成・更新・墓標・競合・物理削除のあとも数え直した値と一致する', async () => {
+    await push(db, 'user-a', [change('a', null), change('b', null, { name: 'ｂ'.repeat(50) })])
+    await push(db, 'user-a', [change('a', 1, { name: 'long'.repeat(100) }), change('b', 99)])
+    await push(db, 'user-a', [change('b', 2, { deletedAt: 5, updatedAt: 5 })])
+    await push(db, 'user-b', [change('a', null)])
+    expect(usage()).toEqual(recount())
+    expect(usage()!.records).toBe(2)
+    expect(usage('user-b')).toEqual(recount('user-b'))
+    db.db.prepare("DELETE FROM records WHERE user_id = 'user-a' AND id = 'a'").run()
+    expect(usage()).toEqual(recount())
+  })
+
+  it('bytes は文字数ではなく UTF-8 のバイト数', async () => {
+    await push(db, 'user-a', [change('a', null, { name: 'あ'.repeat(100) })])
+    const body = (db.db.prepare('SELECT body FROM records').get() as { body: string }).body
+    expect(usage()!.bytes).toBe(new TextEncoder().encode(body).byteLength)
+    expect(usage()!.bytes).toBeGreaterThan(body.length)
+  })
+
+  it('0003 の適用時に、既存のレコードから使用量を作る', async () => {
+    // 0003 より前の Worker（容量の確認なし）が書いたデータ。今の push は sync_usage を読むので SQL で入れる
+    db = new SqliteD1('0003')
+    const insert = db.db.prepare(
+      "INSERT INTO records (user_id, kind, id, rev, updated_at, deleted, body) VALUES (?, 'reagent', ?, ?, 1, 0, ?)",
+    )
+    insert.run('user-a', 'a', 1, JSON.stringify(reagent('a', { name: 'あいう' })))
+    insert.run('user-a', 'b', 2, JSON.stringify(reagent('b')))
+    insert.run('user-b', 'c', 1, JSON.stringify(reagent('c')))
+    db.migrate('0003_sync_usage.sql')
+    expect(usage()).toEqual({ ...recount(), records: 2 })
+    expect(usage('user-b')).toEqual({ ...recount('user-b'), records: 1 })
+  })
+
+  it('件数の上限を超える push は丸ごと断り、何も書かない', async () => {
+    const quota = { records: 3, bytes: 1e9 }
+    await push(db, 'user-a', [change('a', null), change('b', null)], quota)
+    await expect(push(db, 'user-a', [change('c', null), change('d', null)], quota)).rejects.toThrow(QuotaExceeded)
+    expect(count()).toBe(2)
+    // ちょうど上限までは書ける。既存の更新は件数を増やさないので上限でも通る
+    await push(db, 'user-a', [change('c', null)], quota)
+    const r = await push(db, 'user-a', [change('a', 1, { name: 'v2' })], quota)
+    expect(r.results[0]).toMatchObject({ status: 'ok' })
+    // 他のユーザーには影響しない
+    await push(db, 'user-b', [change('a', null)], quota)
+  })
+
+  it('バイト数の上限: 超える push は断り、上限に達したあとも小さくする編集は通る', async () => {
+    await push(db, 'user-a', [change('a', null, { name: 'x'.repeat(1000) })])
+    const quota = { records: 100, bytes: usage()!.bytes + 100 }
+    const err = await push(db, 'user-a', [change('b', null, { name: 'y'.repeat(200) })], quota).catch((e) => e)
+    expect(err).toBeInstanceOf(QuotaExceeded)
+    expect(err.usage).toEqual(usage())
+    expect(count()).toBe(1)
+    // 既存の本文を差し引いて判定する（大きいレコードを小さくし、空いた分で新しいものを作る）
+    const r = await push(db, 'user-a', [change('a', 1, { name: 'x' }), change('b', null, { name: 'y'.repeat(200) })], quota)
+    expect(r.results.map((x) => x.status)).toEqual(['ok', 'ok'])
+  })
+
+  it('上限を超えた後でも、使用量を増やさない push（墓標で小さくなる等）は通る', async () => {
+    await push(db, 'user-a', [change('a', null, { name: 'x'.repeat(500) }), change('b', null)])
+    const tight = { records: 1, bytes: 10 } // 既に両方とも超えている
+    const r = await push(db, 'user-a', [change('a', 1, { name: 'x', deletedAt: 9, updatedAt: 9 })], tight)
+    expect(r.results[0]).toMatchObject({ status: 'ok' })
+    await expect(push(db, 'user-a', [change('a', 3, { name: 'x'.repeat(600) })], tight)).rejects.toThrow(QuotaExceeded)
+  })
+})
+
 describe('端から端まで: 2 台の端末 → HttpTransport → Worker → D1', () => {
   let auth: TestAuth
 
@@ -220,6 +299,28 @@ describe('端から端まで: 2 台の端末 → HttpTransport → Worker → D1
     await expect(x.engine.syncOnce()).rejects.toThrow()
     expect(x.engine.getStatus()).toMatchObject({ phase: 'forbidden', pending: 1 })
     expect(db.db.prepare('SELECT COUNT(*) AS n FROM records').get()).toEqual({ n: 0 })
+  })
+
+  it('容量上限なら 507 → quota で止まり、送信待ちは残る。pull は通る', async () => {
+    const env: Env = { DB: db, SYNC_ALLOWED_USER_IDS: 'user-1' }
+    const transport = new HttpTransport({
+      baseUrl: 'https://colloion.tomu-ai.dev',
+      getToken: () => auth.token('user-1'),
+      fetch: async (input, init) =>
+        handle(new Request(input as string, init), env, {
+          authConfig: auth.config,
+          quota: { records: 1, bytes: 1e9 },
+        }),
+    })
+    await push(db, 'user-1', [change('from-other-device', null)])
+    const store = new IndexedDbAdapter('e2e-quota')
+    const engine = new SyncEngine(store, transport)
+    await engine.attach('user-1')
+    await store.saveReagent(reagent('new'))
+    await expect(engine.syncOnce()).rejects.toThrow()
+    expect(engine.getStatus()).toMatchObject({ phase: 'quota', pending: 1 })
+    expect(await store.getRecord('reagent', 'from-other-device')).toBeDefined()
+    expect(db.db.prepare('SELECT COUNT(*) AS n FROM records').get()).toEqual({ n: 1 })
   })
 
   it('トークンが期限切れなら unauthorized で止まる', async () => {
