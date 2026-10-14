@@ -9,6 +9,7 @@
  *   GET  /api/sync/pull?since=<rev>
  *   POST /api/sync/push   { changes: PushChange[] }（容量上限を超えるなら 507）
  *   *    /api/auth/*      Neon Auth への中継（worker/authProxy.ts。同一オリジン専用で CORS は付けない）
+ *   POST /api/webhooks/neon-auth  Neon Auth の webhook。ログインコードを日本語のメールで送る（worker/authWebhook.ts）
  */
 
 import { MAX_PUSH_BYTES, PULL_PAGE_LIMIT } from '../src/sync/protocol'
@@ -21,6 +22,7 @@ import {
 } from './auth'
 import { isAllowed, parseAllowedUsers } from './access'
 import { AuthProxyError, proxyAuth } from './authProxy'
+import { handleAuthWebhook } from './authWebhook'
 import { readText } from './body'
 import type { D1Like } from './db'
 import { enforceRateLimit, RateLimited } from './rateLimit'
@@ -41,6 +43,13 @@ export interface Env {
    * 本番は `wrangler secret put`、ローカルは .dev.vars
    */
   SYNC_ALLOWED_USER_IDS?: string
+  /**
+   * ログインコードのメールを送る Resend の API キー（送信のみ）。未設定なら webhook は 503。
+   * 本番は `wrangler secret put`、ローカルは .dev.vars（wrangler.jsonc の vars には書かない）
+   */
+  RESEND_API_KEY?: string
+  /** ログインコードのメールの差出人。秘密ではないので wrangler.jsonc の vars */
+  MAIL_FROM?: string
   /** CORS を許すオリジン（カンマ区切り）。本番は同一オリジンなので空 */
   ALLOWED_ORIGINS?: string
   ASSETS?: { fetch(request: Request): Promise<Response> }
@@ -49,7 +58,7 @@ export interface Env {
 /** テストで認証設定を差し替えるための口（本番は NEON_AUTH_BASE_URL から作る） */
 export interface Deps {
   authConfig?: AuthConfig
-  /** 認証の中継が上流（Neon）を叩くときの fetch */
+  /** 認証の中継が上流（Neon）を叩くとき・webhook が Resend を叩くときの fetch */
   fetch?: typeof fetch
   /** 容量上限（テストで小さくする用。本番は DEFAULT_QUOTA） */
   quota?: Quota
@@ -127,6 +136,13 @@ export async function handle(request: Request, env: Env, deps: Deps = {}): Promi
     } catch (e) {
       return errorResponse(e)
     }
+  }
+
+  if (url.pathname === '/api/webhooks/neon-auth') {
+    // サーバー間の呼び出しなので CORS は付けない。認証は署名（Bearer ではない）
+    let keys = deps.authConfig?.keys
+    if (!keys && env.NEON_AUTH_BASE_URL) keys = authConfigFromBaseUrl(env.NEON_AUTH_BASE_URL).keys
+    return handleAuthWebhook(request, env, keys, deps.fetch)
   }
 
   const cors = corsHeaders(request, env)

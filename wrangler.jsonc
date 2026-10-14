@@ -29,7 +29,10 @@
     // secret の継承が阻害され、空の値が本番に載る（bitane の wrangler.jsonc の注記を参照）
     //
     // 本番は同一オリジンなので空。vite の開発サーバーは /api を wrangler dev へ中継する（vite.config.ts）
-    "ALLOWED_ORIGINS": ""
+    "ALLOWED_ORIGINS": "",
+    // ログインコードのメール（worker/authWebhook.ts）の差出人。Resend で検証済みのドメイン。
+    // API キー（RESEND_API_KEY）は秘密なので vars には書かず `wrangler secret put` で入れる
+    "MAIL_FROM": "colloion <no-reply@tomu-ai.dev>"
   },
   "d1_databases": [
     {

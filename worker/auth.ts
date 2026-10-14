@@ -25,7 +25,7 @@ export class AuthUnavailable extends Error {
 }
 
 /** JWKS の取得失敗か（タイムアウト・通信失敗・200 以外の応答） */
-const isJwksFetchFailure = (e: unknown): boolean =>
+export const isJwksFetchFailure = (e: unknown): boolean =>
   e instanceof errors.JWKSTimeout ||
   e instanceof TypeError ||
   (e instanceof errors.JOSEError && e.code === 'ERR_JOSE_GENERIC')
