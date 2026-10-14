@@ -255,10 +255,15 @@ D1 のマイグレーションを足したときは、先に `npx wrangler d1 mi
 （tomu-ai963.github.io/colloion）を閉じて配信を colloion.tomu-ai.dev に一本化した。
 IndexedDB はオリジンごとに分かれるので、Pages 版で付けた記録はこちらからは見えない。
 
+2026-10-14: Neon Auth のメール送信元を、共有アドレス（`auth@mail.myneon.app`。送信数に制限がある）から
+Resend の SMTP（`smtp.resend.com:465`、差出人 `colloion <no-reply@tomu-ai.dev>`）に替えた。
+パスワードは colloion 専用の Resend API キー（送信のみ・`tomu-ai.dev` 限定）で、Neon 側にだけ保存している
+（リポジトリ・Worker には持たない）。設定は `neon neon-auth config email-provider get` で確認できる。
+本文は Neon の既定のテンプレート（英語）のまま。日本語にするには webhook（`send.otp`）で自前送信が要る。
+
 残っていること:
 
 1. Safari（iPhone）の実機でログインと同期を確認する
-2. Neon Auth のメール送信元を共有アドレス（`auth@mail.myneon.app`）から独自の SMTP に替える（Neon の推奨）
 
 ## 限界 — 表示値について必ず知っておくこと
 
