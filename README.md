@@ -273,6 +273,8 @@ Resend の SMTP（`smtp.resend.com:465`、差出人 `colloion <no-reply@tomu-ai.
   Neon に再試行させます。再送で 2 通届かないよう、Resend に `Idempotency-Key`（event_id）を付けます
 - 有効にする順番: Resend で送信のみのキーを作る → `wrangler secret put RESEND_API_KEY` →
   deploy → Neon の webhook を有効化（`send.otp`・timeout 5 秒）→ 実際にログインして届くか確かめる
+- 2026-10-14 に本番で有効化（Neon の webhook: `send.otp`・timeout 5 秒）。
+  実際のログインで日本語のメールが 1 通だけ届くこと（Resend の記録で delivered）を確認済み
 - **止め方**（メールが届かなくなったとき）: Neon の webhook を無効にすると、
   すぐに Neon の既定のメール（Resend の SMTP 経由・英語）に戻ります
 
