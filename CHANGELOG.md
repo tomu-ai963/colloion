@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.1 — 2026-10-14
+
+- 本番を https://colloion.tomu-ai.dev に公開（1 つの Worker がフロント・同期 API・認証の中継を配信）
+- 同期にユーザーごとの容量上限（10,000 件・32 MB）
+  - 使用量は D1 の `sync_usage`（`migrations/0003` のトリガーが保つ合計）。超える push は丸ごと 507
+  - 画面のバッジに「容量上限」。送信待ちは端末に残り、pull と使用量を増やさない push は続く
+  - 削除の墓標も数えるため、削除しても使用量は減らない
+- GitHub Pages 版（tomu-ai963.github.io/colloion）を閉じ、配信を colloion.tomu-ai.dev に一本化
+  - vite の base を `/` に戻し、`build:worker` を `build` にまとめた
+- ログインコードのメール
+  - 送信元を Neon の共有アドレスから Resend（`colloion <no-reply@tomu-ai.dev>`）に変更
+  - 本文を日本語に。Neon Auth の webhook（`send.otp`）を Worker（`/api/webhooks/neon-auth`）で受け、
+    署名（Ed25519 の detached JWS）を検証してから Resend で送る
+
 ## 0.3.0 — 2026-10-13 (Phase 3: 端末間同期)
 
 - 任意のログインで、バッチ・試薬・母液・スポイト・通電セッションを端末間で同期
