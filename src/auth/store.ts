@@ -14,7 +14,7 @@ import {
 
 /**
  * ログイン状態。
- * - unavailable: 同期サーバーが無い配信（GitHub Pages 等）。ローカル保存だけで動く
+ * - unavailable: 同期サーバーが無い環境（vite 単体の開発サーバー等）。ローカル保存だけで動く
  * - signedOut / signedIn: 同期サーバーがある。ログインすると同期エンジンが動く
  */
 export type AuthStatus = 'unknown' | 'unavailable' | 'signedOut' | 'signedIn'

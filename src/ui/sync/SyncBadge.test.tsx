@@ -31,7 +31,7 @@ const status = (patch: Partial<SyncStatus>): SyncStatus => ({
 })
 
 describe('SyncBadge: 表示の切り替え', () => {
-  it('同期サーバーが無い配信（GitHub Pages 等）では何も出さない', () => {
+  it('同期サーバーが無い環境（vite 単体の開発サーバー等）では何も出さない', () => {
     useAuthStore.setState({ status: 'unavailable' })
     const { container } = render(<SyncBadge />)
     expect(container).toBeEmptyDOMElement()

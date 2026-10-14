@@ -20,7 +20,7 @@
 ```bash
 npm install
 npm run dev        # 開発サーバ（同期なしで動く）
-npm run build      # 本番ビルド（GitHub Pages 向け base=/colloion/）
+npm run build      # 本番ビルド（dist/。Worker の assets から配信する）
 npm run typecheck  # 型検査（フロント・Worker）
 npm run lint       # ESLint（src・worker）
 npm run test       # Vitest（core・同期エンジン・Worker・主要 UI）
@@ -31,7 +31,7 @@ npm run test       # Vitest（core・同期エンジン・Worker・主要 UI）
 ```bash
 cp .dev.vars.example .dev.vars   # NEON_AUTH_BASE_URL と SYNC_ALLOWED_USER_IDS を入れる
 npm run migrate:local            # ローカル D1 にマイグレーションを適用
-npm run dev:worker               # base=/ でビルドして wrangler dev（http://localhost:8787）
+npm run dev:worker               # ビルドして wrangler dev（http://localhost:8787）
 ```
 
 `npm run dev`（vite）と `npx wrangler dev` を並べて起動すると、vite が `/api` を
@@ -234,8 +234,8 @@ pull は続きます）。使用量を増やさない push（編集で小さく�
   ログイン画面で、前回と違うアカウントなら注意を出します。
 - ログアウトしても端末の記録は消えません。送信待ちは次に同じアカウントで
   ログインしたときに送られます。
-- GitHub Pages など同期サーバーの無い配信では、ログインの入口は表示されず、
-  従来どおりローカル保存だけで動きます。
+- 同期サーバーの無い環境（`npm run dev` を vite だけで起動したとき等）では、
+  ログインの入口は表示されず、ローカル保存だけで動きます。
 
 ### 本番
 
@@ -247,17 +247,18 @@ https://colloion.tomu-ai.dev （1 つの Worker がフロント・`/api/sync/*`�
 - カスタムドメイン `colloion.tomu-ai.dev`（workers.dev / Preview URL は無効）を割り当て、
   Neon Auth の trusted origins に登録
 
-更新は `npm run build:worker && npx wrangler deploy`（`build:worker` は base を `/` にしてビルドする。
-通常の `npm run build` は GitHub Pages 用の `/colloion/` なので、そのまま deploy しないこと）。
+更新は `npm run build && npx wrangler deploy`。
+D1 のマイグレーションを足したときは、先に `npx wrangler d1 migrations apply colloion --remote`、
+その後に deploy（逆の順だと、新しい Worker が古いスキーマの D1 を読んで失敗する）。
+
+2026-10-14: ユーザーごとの容量上限（`migrations/0003`）を反映し、GitHub Pages 版
+（tomu-ai963.github.io/colloion）を閉じて配信を colloion.tomu-ai.dev に一本化した。
+IndexedDB はオリジンごとに分かれるので、Pages 版で付けた記録はこちらからは見えない。
 
 残っていること:
 
 1. Safari（iPhone）の実機でログインと同期を確認する
 2. Neon Auth のメール送信元を共有アドレス（`auth@mail.myneon.app`）から独自の SMTP に替える（Neon の推奨）
-3. GitHub Pages 版（`.github/workflows/pages.yml`）を残すか決める
-4. ユーザーごとの容量上限（`migrations/0003_sync_usage.sql`）を本番に反映する。
-   **先に `npx wrangler d1 migrations apply colloion --remote`、その後に deploy**
-   （逆の順だと、新しい Worker の push が `sync_usage` の無い D1 を読んで 500 になる）
 
 ## 限界 — 表示値について必ず知っておくこと
 

@@ -2,9 +2,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// GitHub Pages でリポジトリ名配下に配信するため base を固定する
+// 配信は Worker の assets（colloion.tomu-ai.dev）のルートなので base は既定の /
 export default defineConfig({
-  base: '/colloion/',
   plugins: [react()],
   // 開発時は /api（同期 API と認証の中継）を wrangler dev へ渡す。
   // ブラウザからは同一オリジンに見えるので、Cookie も CORS も本番と同じ条件になる

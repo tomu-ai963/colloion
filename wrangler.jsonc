@@ -1,5 +1,5 @@
 // colloion Worker（Phase 3）: フロント（dist/）の配信と同期 API（/api/*）を同じオリジンで提供する。
-// deploy は `npm run build:worker && npx wrangler deploy`（とむの確認を取ってから）。
+// deploy は `npm run build && npx wrangler deploy`（とむの確認を取ってから）。
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "colloion",
@@ -16,7 +16,7 @@
     "redact_query_string": true,
     "logs": { "invocation_logs": false }
   },
-  // vite build --base / の出力（npm run build:worker）。/api/* だけ Worker を先に通す
+  // vite build の出力（npm run build）。/api/* だけ Worker を先に通す
   "assets": {
     "directory": "./dist/",
     "not_found_handling": "single-page-application",

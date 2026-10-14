@@ -10,7 +10,7 @@ import { syncLabel } from './syncLabel'
 const TOAST_MS = 4_000
 
 /**
- * 上部バーの同期の入口。同期サーバーが無い配信（GitHub Pages 等）では何も出さない。
+ * 上部バーの同期の入口。同期サーバーが無い環境（vite 単体の開発サーバー等）では何も出さない。
  * 未ログインなら「同期にログイン」、ログイン中は同期状態のバッジ。押すとアカウントのダイアログ。
  */
 export function SyncBadge() {

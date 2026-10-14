@@ -8,18 +8,17 @@
     "type": "git",
     "url": "git+https://github.com/tomu-ai963/colloion.git"
   },
-  "homepage": "https://tomu-ai963.github.io/colloion/",
+  "homepage": "https://colloion.tomu-ai.dev",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "build:worker": "tsc -b && vite build --base /",
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty",
     "lint": "eslint src worker",
     "test": "vitest run",
     "test:watch": "vitest",
-    "dev:worker": "npm run build:worker && wrangler dev",
+    "dev:worker": "npm run build && wrangler dev",
     "migrate:local": "wrangler d1 migrations apply colloion --local"
   },
   "dependencies": {
