@@ -259,7 +259,27 @@ IndexedDB はオリジンごとに分かれるので、Pages 版で付けた記�
 Resend の SMTP（`smtp.resend.com:465`、差出人 `colloion <no-reply@tomu-ai.dev>`）に替えた。
 パスワードは colloion 専用の Resend API キー（Resend 上の名前 `colloion`）で、Neon 側にだけ保存している
 （リポジトリ・Worker には持たない）。設定は `neon neon-auth config email-provider get` で確認できる。
-本文は Neon の既定のテンプレート（英語）のまま。日本語にするには webhook（`send.otp`）で自前送信が要る。
+本文は Neon の既定のテンプレート（英語）のまま。日本語にするための webhook は次の節。
+
+### ログインコードのメール（webhook）
+
+`POST /api/webhooks/neon-auth`（`worker/authWebhook.ts`）が Neon Auth の `send.otp` を受け、
+日本語のメールを Resend の API で送ります（差出人は `wrangler.jsonc` の `MAIL_FROM`）。
+
+- 署名は detached JWS（Ed25519）を、JWT と同じ JWKS で検証します。タイムスタンプは前後 5 分まで。
+  共有シークレットは無く、Worker が持つ秘密は Resend の API キー（`RESEND_API_KEY`）だけです
+- **購読すると Neon は自分のメールを送らなくなり、webhook が 3 回とも失敗するとログインできません**
+  （既定の送信には戻りません）。Resend の失敗は 502、JWKS に届かないときは 503 を返して
+  Neon に再試行させます。再送で 2 通届かないよう、Resend に `Idempotency-Key`（event_id）を付けます
+- 有効にする順番: Resend で送信のみのキーを作る → `wrangler secret put RESEND_API_KEY` →
+  deploy → Neon の webhook を有効化（`send.otp`・timeout 5 秒）→ 実際にログインして届くか確かめる
+- **止め方**（メールが届かなくなったとき）: Neon の webhook を無効にすると、
+  すぐに Neon の既定のメール（Resend の SMTP 経由・英語）に戻ります
+
+```powershell
+neon neon-auth config webhook update --enabled false --project-id purple-thunder-33504993 --branch br-wild-union-b3pihgpl
+```
+
 
 残っていること:
 

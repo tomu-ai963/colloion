@@ -9,5 +9,9 @@ NEON_AUTH_BASE_URL=
 #   容量上限が無い今は使わないこと。本番は `wrangler secret put SYNC_ALLOWED_USER_IDS`。
 #   自分の ID は、一度ログインしたあとローカル D1 の records.user_id で分かる。
 SYNC_ALLOWED_USER_IDS=
+# RESEND_API_KEY: ログインコードのメールを日本語で送る webhook（worker/authWebhook.ts）用。
+#   ローカルでは Neon から webhook が届かない（localhost は登録できない）ので、通常は空でよい。
+#   本番は `wrangler secret put RESEND_API_KEY`（Resend で作った送信のみのキー）。
+RESEND_API_KEY=
 # vite の開発サーバーは /api を wrangler dev に中継するので、通常は空でよい
 ALLOWED_ORIGINS=
