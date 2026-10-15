@@ -13,6 +13,9 @@ const ROUTE_LABELS: Record<Route, string> = {
   salt: '塩を溶かす',
 }
 
+/** 陰極は表示用の記録だけで、計算には使わない（溶け出すのは陽極） */
+const CATHODES = ['銀 Ag', '銅 Cu', '白金 Pt', 'グラファイト C', 'ステンレス SUS316']
+
 function anodeOptionLabel(symbol: MetalSymbol): string {
   const m = METALS[symbol]
   const eq = electrochemicalEquivalent(m)
@@ -23,7 +26,11 @@ function anodeOptionLabel(symbol: MetalSymbol): string {
 export function ElectrodePanel({ derived }: { derived: Derived }) {
   const electrode = useAppStore((s) => s.electrode)
   const setElectrode = useAppStore((s) => s.setElectrode)
+  const reversalMin = useAppStore((s) => s.power.reversalMin)
   const metal = derived.metal
+  // 極性反転で銅の陰極が陽極側になると、銅が溶けて液に Cu²⁺ が混ざる（陽極も銅なら同じ金属なので問題ない）
+  const copperCathodeDissolves =
+    electrode.cathode === '銅 Cu' && electrode.anode !== 'Cu' && reversalMin > 0
   const warn = !metal.faradayValid && metal.symbol !== 'Pt'
 
   return (
@@ -50,7 +57,7 @@ export function ElectrodePanel({ derived }: { derived: Derived }) {
             value={electrode.cathode}
             onChange={(e) => setElectrode({ cathode: e.target.value })}
           >
-            {['銀 Ag', '白金 Pt', 'グラファイト C', 'ステンレス SUS316'].map((v) => (
+            {CATHODES.map((v) => (
               <option key={v}>{v}</option>
             ))}
           </select>
@@ -100,6 +107,17 @@ export function ElectrodePanel({ derived }: { derived: Derived }) {
       </div>
 
       <Advisory warn={warn} html={metal.advisory} />
+
+      {copperCathodeDissolves && (
+        <div className={c.advisWarn}>
+          <span className={c.ah}>CAUTION</span>
+          <span>
+            極性反転（{reversalMin} 分ごと）をすると、銅の陰極が陽極側になって溶け出し、液に銅イオン
+            Cu²⁺ が混ざります（理論値には入りません）。銅を陰極に使うなら、通電タブの極性反転を
+            「なし」にしてください。
+          </span>
+        </div>
+      )}
 
       <div className={c.note}>
         電流密度は <b>{derived.cd.toFixed(2)}</b> mA/cm²。
