@@ -3,7 +3,9 @@ import type { Batch, Verdict } from '../../core/model'
 import { secondsToHM } from '../../core/units'
 import { suggestEta } from '../../store/derive'
 import { useAppStore } from '../../store/appStore'
+import { BackupSection } from '../backup/BackupSection'
 import c from '../components/controls.module.css'
+import { download } from '../download'
 
 const VERDICTS: Verdict[] = ['—', '良', '凝集', '粒径大', '析出']
 
@@ -11,15 +13,6 @@ function conditionLabel(b: Batch): string {
   const { hours, minutes } = secondsToHM(b.power.durationSec)
   const vol = b.water.volumeMl >= 1000 ? `${b.water.volumeMl / 1000}L` : `${b.water.volumeMl}mL`
   return `${b.power.currentMa} mA × ${hours}:${String(minutes).padStart(2, '0')} / ${vol}`
-}
-
-function download(filename: string, mime: string, content: string) {
-  const url = URL.createObjectURL(new Blob([content], { type: mime }))
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
 }
 
 function toCsv(batches: Batch[]): string {
@@ -183,17 +176,19 @@ export function LogPanel() {
               download('colloion-batches.json', 'application/json', JSON.stringify(batches, null, 2))
             }
           >
-            JSON エクスポート
+            バッチを JSON で書き出す
           </button>
           <button
             type="button"
             className={c.btnCancel}
             onClick={() => download('colloion-batches.csv', 'text/csv', toCsv(batches))}
           >
-            CSV エクスポート
+            バッチを CSV で書き出す
           </button>
         </div>
       )}
+
+      <BackupSection />
     </>
   )
 }

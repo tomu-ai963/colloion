@@ -1,5 +1,6 @@
 import type { Batch, Pipette, Reagent, Stock } from '../core/model'
 import type { Session } from '../core/session'
+import type { ImportCounts, ImportItem } from './backup'
 
 /**
  * 永続化の抽象。この端末の IndexedDB が正本で、Phase 3 の同期
@@ -30,4 +31,10 @@ export interface StorageAdapter {
   listSessions(): Promise<Session[]>
   saveSession(session: Session): Promise<void>
   deleteSession(id: string): Promise<void>
+
+  /**
+   * バックアップの読み込み。既存のレコードとは resolveImport の規則で突き合わせ、
+   * 変わったものだけを書いて送信待ちに積む（全件を1トランザクションで）
+   */
+  importRecords(items: ImportItem[]): Promise<ImportCounts>
 }
