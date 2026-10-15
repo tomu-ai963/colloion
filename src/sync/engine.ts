@@ -2,7 +2,9 @@
  * 同期エンジン（Phase 3 Step 2）。
  *
  * この端末の IndexedDB が正本で、サーバーとは差分だけをやり取りする。
- * 1 回の同期は「pull → push（競合があれば最大 MAX_PUSH_ROUNDS 回まで繰り返す）」。
+ * 1 回の同期は「pull → push」。push は 1 ラウンド PUSH_BATCH_LIMIT 件ずつ、送信待ちが空になるまで
+ * 繰り返す（競合が MAX_CONFLICT_ROUNDS ラウンド続いたら止める）。1 回の同期で送るのは
+ * MAX_PUSH_ROUNDS ラウンドまでで、残りは MIN_INTERVAL_MS 空けた次の同期で送る。
  *
  * - pull: サーバー上で cursor 以降に変わったレコードを受け取り、ローカルとマージする。
  *   マージ結果がサーバーの版と違えば（こちらに未送信の変更がある等）送信待ちに積む
@@ -33,7 +35,13 @@ export const DEBOUNCE_MS = 2_000
 export const MIN_INTERVAL_MS = 30_000
 /** タブを開いている間、他端末の変更を取りに行く間隔 */
 export const POLL_INTERVAL_MS = 5 * 60_000
-const MAX_PUSH_ROUNDS = 3
+/** 競合が続いたラウンドの上限（同じレコードが競合し続けても同期が終わるように） */
+const MAX_CONFLICT_ROUNDS = 3
+/**
+ * 1 回の同期で送るラウンドの上限（40 件 × 25 = 1,000 件）。初回ログインで記録が多くても
+ * サーバーのレート制限（push 600 回/時）を一度に使い切らないように、残りは次の同期に回す
+ */
+export const MAX_PUSH_ROUNDS = 25
 const RETRY_BASE_MS = 15_000
 const RETRY_MAX_MS = 5 * 60_000
 
@@ -138,17 +146,27 @@ export class SyncEngine {
       const pulled = await this.pull(applied)
       let pushed = 0
       let conflicts = 0
-      for (let round = 0; round < MAX_PUSH_ROUNDS; round++) {
+      let conflictRounds = 0
+      let leftover = false
+      for (let round = 1; ; round++) {
         const r = await this.pushRound(applied)
         pushed += r.pushed
         conflicts += r.conflicts
-        // 削除だけを送ったラウンドの後は、残りの変更を続けて送る
-        if (!r.more && (r.sent === 0 || r.conflicts === 0)) break
+        // 送信待ちが空（削除だけを送ったラウンドの後は、残りの変更を続けて送る）
+        if (r.sent === 0 && !r.more) break
+        conflictRounds = r.conflicts > 0 ? conflictRounds + 1 : 0
+        if (conflictRounds >= MAX_CONFLICT_ROUNDS) break
+        if (round >= MAX_PUSH_ROUNDS) {
+          leftover = true
+          break
+        }
       }
       if (applied.size > 0) this.opts.onApplied?.(applied)
       this.failures = 0
       await this.refreshPending()
       this.setStatus({ phase: 'idle', lastSyncedAt: Date.now() })
+      // 上限で打ち切ったら、残りは間隔を空けて続けて送る（書き込みや定期の同期を待たない）
+      if (leftover && this.status.pending > 0) this.requestSync()
       return { pulled, pushed, conflicts }
     } catch (e) {
       await this.refreshPending().catch(() => {})
