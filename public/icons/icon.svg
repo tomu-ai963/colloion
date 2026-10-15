@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- colloion のアイコン。全面に背景を敷き（maskable）、ビーカーは中央の安全域（半径 40%）に収める -->
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="70%">
+      <stop offset="0" stop-color="#2b271e"/>
+      <stop offset="1" stop-color="#14120d"/>
+    </radialGradient>
+    <linearGradient id="liquid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f3e4b4" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#dcb35a" stop-opacity="0.50"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#fff6d8" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#fff6d8" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#fff6d8" stop-opacity="0.05"/>
+    </linearGradient>
+    <clipPath id="inLiquid">
+      <path d="M160 236 H352 V358 Q352 384 326 384 H186 Q160 384 160 358 Z"/>
+    </clipPath>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#bg)"/>
+
+  <!-- 中身は 1.12 倍にして中央へ（縁の注ぎ口まで含めて安全域に収まる） -->
+  <g transform="translate(256 256) scale(1.12) translate(-250 -260)">
+
+  <!-- 液 -->
+  <g clip-path="url(#inLiquid)">
+    <rect x="150" y="230" width="212" height="160" fill="url(#liquid)"/>
+    <!-- チンダル現象の光の筋 -->
+    <polygon points="120,262 400,300 400,336 120,286" fill="url(#beam)"/>
+
+    <!-- 粒（にじみ） -->
+    <g filter="url(#glow)" opacity="0.75">
+      <circle cx="198" cy="296" r="14" fill="#e5534b"/>
+      <circle cx="252" cy="276" r="13" fill="#f4c542"/>
+      <circle cx="306" cy="300" r="14" fill="#5bbf6a"/>
+      <circle cx="226" cy="342" r="13" fill="#5bbf6a"/>
+      <circle cx="282" cy="352" r="12" fill="#e5534b"/>
+      <circle cx="186" cy="360" r="9" fill="#f4c542"/>
+      <circle cx="330" cy="352" r="9" fill="#f4c542"/>
+      <circle cx="322" cy="262" r="8" fill="#e5534b"/>
+      <circle cx="204" cy="256" r="7" fill="#5bbf6a"/>
+      <circle cx="258" cy="318" r="7" fill="#e5534b"/>
+    </g>
+    <!-- 粒 -->
+    <g>
+      <circle cx="198" cy="296" r="12" fill="#e5534b"/>
+      <circle cx="252" cy="276" r="11" fill="#f4c542"/>
+      <circle cx="306" cy="300" r="12" fill="#5bbf6a"/>
+      <circle cx="226" cy="342" r="11" fill="#5bbf6a"/>
+      <circle cx="282" cy="352" r="10" fill="#e5534b"/>
+      <circle cx="186" cy="360" r="7" fill="#f4c542"/>
+      <circle cx="330" cy="352" r="7" fill="#f4c542"/>
+      <circle cx="322" cy="262" r="6" fill="#e5534b"/>
+      <circle cx="204" cy="256" r="5" fill="#5bbf6a"/>
+      <circle cx="258" cy="318" r="5" fill="#e5534b"/>
+    </g>
+    <!-- 粒のつや -->
+    <g fill="#ffffff" opacity="0.55">
+      <circle cx="194" cy="292" r="4"/>
+      <circle cx="248" cy="272" r="3.6"/>
+      <circle cx="302" cy="296" r="4"/>
+      <circle cx="222" cy="338" r="3.6"/>
+      <circle cx="279" cy="349" r="3.2"/>
+    </g>
+  </g>
+
+  <!-- 液面 -->
+  <path d="M164 236 H348" stroke="#f3e6bf" stroke-opacity="0.7" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- 目盛り -->
+  <g stroke="#efe9da" stroke-opacity="0.45" stroke-width="4" stroke-linecap="round">
+    <path d="M178 184 H202"/>
+    <path d="M178 214 H194"/>
+  </g>
+
+  <!-- ガラス（注ぎ口付きの縁） -->
+  <path d="M136 134 Q156 136 160 156 V358 Q160 384 186 384 H326 Q352 384 352 358 V146 Q352 136 362 132"
+        fill="none" stroke="#efe9da" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- ガラスの映り込み -->
+  <path d="M338 168 V218" stroke="#ffffff" stroke-opacity="0.22" stroke-width="6" stroke-linecap="round"/>
+  </g>
+</svg>

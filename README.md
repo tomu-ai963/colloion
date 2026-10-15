@@ -338,8 +338,14 @@ src/
   ui/         パネル・共通コンポーネント・readout・Run Mode・同期の画面
 worker/       Cloudflare Worker（同期 API・認証の中継・アセット配信）
 migrations/   D1 のスキーマ
+public/       manifest.webmanifest・アイコン（icons/icon.svg が元絵）
+scripts/      icons.mjs（元絵から PNG のアイコンを書き出す）
 docs/         参照用 UI モック・スクリーンショット
 ```
+
+アイコンを描き直したら `node scripts/icons.mjs` で PNG（192・512・180・32 px）を
+書き出し直します。元絵は全面に背景を敷き、絵を中央の安全域（半径 40%）に収めてあるので、
+同じ絵を通常のアイコンと maskable（Android で丸などに切り抜かれる）の両方に使っています。
 
 Worker の push / pull は、サーバーの基準実装（`src/sync/memoryServer.ts`）と同じ操作で
 同じ結果（`rev` の値まで）になることをテストで確かめています（`worker/sync.test.ts`）。
