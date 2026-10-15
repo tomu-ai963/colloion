@@ -68,6 +68,15 @@ describe('App', () => {
     expect(screen.queryByText(/銅の陰極が陽極側になって溶け出し/)).not.toBeInTheDocument()
   })
 
+  it('還元剤にコーンシロップを選ぶと、ブドウ糖換算の説明が出てモル比が出る', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('tab', { name: /添加物/ }))
+    await user.selectOptions(screen.getByLabelText('試薬', { selector: '#red' }), 'コーンシロップ（Karo ライト）')
+    expect(screen.getByText(/ブドウ糖に換算したモル数/)).toBeInTheDocument()
+    expect(screen.getByText('コーンシロップ / Ag')).toBeInTheDocument()
+  })
+
   it('Ca 選択では逆算が「電解不可」になる', async () => {
     const user = userEvent.setup()
     render(<App />)
