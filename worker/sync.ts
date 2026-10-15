@@ -9,12 +9,14 @@
  * 書けたかどうかは RETURNING の行の有無で分かる。
  *
  * 容量上限（MAX_USER_RECORDS / MAX_USER_BYTES）は書く前に確かめる。使用量は sync_usage
- * （migrations/0003 のトリガーが保つ合計）から読み、この push で増える分を足して判定する。
+ * （migrations/0004 のトリガーが保つ合計）から読み、この push で増える分を足して判定する。
+ * 件数は墓標を除いた数、バイト数は墓標を含む本文の合計。墓標は本文を持たない形で保存するので
+ * （toTombstone）、削除すると件数もバイト数も空く。
  * 確認と書き込みは別の呼び出しなので、同じユーザーの push が並行すると 1 回分（最大
  * PUSH_BATCH_LIMIT 件・MAX_PUSH_BYTES）まで上限を超えうる。DB の容量を守る目的には足りる。
  */
 
-import type { SyncKind } from '../src/core/merge'
+import { toTombstone, type SyncKind } from '../src/core/merge'
 import {
   MAX_USER_BYTES,
   MAX_USER_RECORDS,
@@ -45,9 +47,13 @@ interface RecordRow {
   body: string
 }
 
-/** 保存する本文。rev はサーバーの列が正なので本文からは外す */
+/**
+ * 保存する本文。rev はサーバーの列が正なので本文からは外す。
+ * 墓標はクライアントが本文を付けて送ってきても（古い版のアプリ）落として保存する
+ */
 function bodyOf(record: AnyRecord): string {
-  return JSON.stringify({ ...record, rev: undefined }) // undefined のキーは JSON に出ない
+  const r = record.deletedAt !== undefined ? toTombstone(record) : record
+  return JSON.stringify({ ...r, rev: undefined }) // undefined のキーは JSON に出ない
 }
 
 const toRecord = (row: RecordRow): AnyRecord => ({ ...JSON.parse(row.body), rev: row.rev }) as AnyRecord
@@ -77,7 +83,7 @@ export class QuotaExceeded extends Error {
  * この push で使用量がどれだけ増えるかを測り、上限を超えるなら QuotaExceeded を投げる。
  * 競合して書かれないものも書かれる前提で数える（多めに見積もる側に倒す）。
  * 増えない側（件数が増えない・バイト数が減る）の項目は上限を超えていても止めない
- * （上限に達したあとも、編集で小さくすることはできる）。
+ * （上限に達したあとも、削除や編集で小さくすることはできる）。
  */
 async function checkQuota(
   db: D1Like,
@@ -98,8 +104,10 @@ async function checkQuota(
   let addBytes = 0
   changes.forEach((c, i) => {
     const before = existing.get(`${c.kind}:${c.id}`)
-    if (before === undefined) addRecords++
-    addBytes += utf8Bytes(bodies[i]!) - (before ?? 0)
+    const liveAfter = c.record.deletedAt === undefined ? 1 : 0
+    const liveBefore = before !== undefined && before.deleted === 0 ? 1 : 0
+    addRecords += liveAfter - liveBefore
+    addBytes += utf8Bytes(bodies[i]!) - (before?.bytes ?? 0)
   })
   if (
     (addRecords > 0 && usage.records + addRecords > quota.records) ||
@@ -173,15 +181,20 @@ async function fetchRecords(db: D1Like, userId: string, keys: Key[]): Promise<Ma
   return new Map(results.map((r) => [`${r.kind}:${r.id}`, r]))
 }
 
-/** サーバーにある版の本文のバイト数（無いものは入らない） */
-async function fetchSizes(db: D1Like, userId: string, keys: Key[]): Promise<Map<string, number>> {
+interface StoredSize {
+  bytes: number
+  deleted: 0 | 1
+}
+
+/** サーバーにある版の本文のバイト数と墓標かどうか（無いものは入らない） */
+async function fetchSizes(db: D1Like, userId: string, keys: Key[]): Promise<Map<string, StoredSize>> {
   const { results } = await selectByKeys(
     db,
     userId,
     keys,
-    'kind, id, length(CAST(body AS BLOB)) AS bytes',
-  ).all<Key & { bytes: number }>()
-  return new Map(results.map((r) => [`${r.kind}:${r.id}`, r.bytes]))
+    'kind, id, deleted, length(CAST(body AS BLOB)) AS bytes',
+  ).all<Key & StoredSize>()
+  return new Map(results.map((r) => [`${r.kind}:${r.id}`, { bytes: r.bytes, deleted: r.deleted }]))
 }
 
 export async function pull(

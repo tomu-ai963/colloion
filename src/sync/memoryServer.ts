@@ -1,3 +1,4 @@
+import { toTombstone } from '../core/merge'
 import type {
   AnyRecord,
   PullChange,
@@ -25,7 +26,9 @@ export class MemorySyncServer {
         return { kind: c.kind, id: c.id, status: 'conflict', current: structuredClone(cur.record) }
       }
       const rev = ++this.seq
-      const record = { ...structuredClone(c.record), rev } as AnyRecord
+      // 墓標は本文を落として保存する（D1 実装と同じ）
+      const body = c.record.deletedAt !== undefined ? toTombstone(c.record) : c.record
+      const record = { ...structuredClone(body), rev } as AnyRecord
       this.records.set(key, { kind: c.kind, id: c.id, rev, record })
       return { kind: c.kind, id: c.id, status: 'ok', rev }
     })
