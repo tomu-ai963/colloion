@@ -148,11 +148,11 @@ describe('D1 実装: pull', () => {
 describe('D1 実装: 容量上限', () => {
   const usage = (userId = 'user-a') =>
     db.db.prepare('SELECT records, bytes FROM sync_usage WHERE user_id = ?').get(userId) as Quota | undefined
-  /** トリガーを通さずに数え直した値 */
+  /** トリガーを通さずに数え直した値（件数は墓標を除く） */
   const recount = (userId = 'user-a') =>
     db.db
       .prepare(
-        'SELECT COUNT(*) AS records, SUM(length(CAST(body AS BLOB))) AS bytes FROM records WHERE user_id = ?',
+        'SELECT SUM(1 - deleted) AS records, SUM(length(CAST(body AS BLOB))) AS bytes FROM records WHERE user_id = ?',
       )
       .get(userId) as Quota | undefined
   const count = () => (db.db.prepare('SELECT COUNT(*) AS n FROM records').get() as { n: number }).n
@@ -163,7 +163,7 @@ describe('D1 実装: 容量上限', () => {
     await push(db, 'user-a', [change('b', 2, { deletedAt: 5, updatedAt: 5 })])
     await push(db, 'user-b', [change('a', null)])
     expect(usage()).toEqual(recount())
-    expect(usage()!.records).toBe(2)
+    expect(usage()!.records).toBe(1) // b は墓標
     expect(usage('user-b')).toEqual(recount('user-b'))
     db.db.prepare("DELETE FROM records WHERE user_id = 'user-a' AND id = 'a'").run()
     expect(usage()).toEqual(recount())
@@ -213,6 +213,55 @@ describe('D1 実装: 容量上限', () => {
     // 既存の本文を差し引いて判定する（大きいレコードを小さくし、空いた分で新しいものを作る）
     const r = await push(db, 'user-a', [change('a', 1, { name: 'x' }), change('b', null, { name: 'y'.repeat(200) })], quota)
     expect(r.results.map((x) => x.status)).toEqual(['ok', 'ok'])
+  })
+
+  it('墓標は本文を落として保存し、削除で件数とバイト数が空く', async () => {
+    await push(db, 'user-a', [change('a', null, { name: 'x'.repeat(500) }), change('b', null)])
+    const before = usage()!
+    // 古い版のアプリは本文付きの墓標を送ってくる
+    await push(db, 'user-a', [change('a', 1, { name: 'x'.repeat(500), deletedAt: 9, updatedAt: 9 })])
+    const body = (db.db.prepare("SELECT body FROM records WHERE id = 'a'").get() as { body: string }).body
+    expect(JSON.parse(body)).toEqual({ id: 'a', updatedAt: 9, deletedAt: 9 })
+    expect(usage()).toEqual(recount())
+    expect(usage()!.records).toBe(before.records - 1)
+    expect(usage()!.bytes).toBeLessThan(before.bytes - 400)
+    // pull でも墓標として届く
+    const pulled = (await pull(db, 'user-a', 0, 10)).changes.find((c) => c.id === 'a')!
+    expect(pulled.record).toEqual({ id: 'a', updatedAt: 9, deletedAt: 9, rev: 3 })
+  })
+
+  it('件数の上限に達しても、削除すれば新しいレコードを置ける', async () => {
+    const quota = { records: 2, bytes: 1e9 }
+    await push(db, 'user-a', [change('a', null), change('b', null)], quota)
+    await expect(push(db, 'user-a', [change('c', null)], quota)).rejects.toThrow(QuotaExceeded)
+    await push(db, 'user-a', [change('a', 1, { deletedAt: 5, updatedAt: 5 })], quota)
+    const r = await push(db, 'user-a', [change('c', null)], quota)
+    expect(r.results[0]).toMatchObject({ status: 'ok' })
+    // 同じ push の中で削除と追加が相殺するなら通る
+    const r2 = await push(db, 'user-a', [change('b', 2, { deletedAt: 6, updatedAt: 6 }), change('d', null)], quota)
+    expect(r2.results.map((x) => x.status)).toEqual(['ok', 'ok'])
+    expect(usage()).toEqual({ ...recount(), records: 2 })
+  })
+
+  it('0004 の適用で、既存の墓標の本文が縮み、使用量が数え直される', async () => {
+    // 0004 より前の Worker は墓標を本文ごと保存していた
+    db = new SqliteD1('0004')
+    await push(db, 'user-a', [change('a', null, { name: 'x'.repeat(500) }), change('b', null)])
+    await push(db, 'user-a', [change('a', 1, { name: 'x'.repeat(500), deletedAt: 9, updatedAt: 9 })])
+    await push(db, 'user-b', [change('c', null)])
+    expect(usage()!.records).toBe(2) // 0003 は墓標も数えていた
+    const revBefore = db.db.prepare('SELECT id, rev FROM records ORDER BY id').all()
+
+    db.migrate('0004_sync_usage_live.sql')
+    const body = (db.db.prepare("SELECT body FROM records WHERE id = 'a'").get() as { body: string }).body
+    expect(JSON.parse(body)).toEqual({ id: 'a', updatedAt: 9, deletedAt: 9 })
+    expect(usage()).toEqual({ ...recount(), records: 1 })
+    expect(usage('user-b')).toEqual({ ...recount('user-b'), records: 1 })
+    expect(db.db.prepare('SELECT id, rev FROM records ORDER BY id').all()).toEqual(revBefore)
+
+    // 適用後のトリガーも数え直した値と一致する
+    await push(db, 'user-a', [change('b', 2, { deletedAt: 10, updatedAt: 10 }), change('d', null)])
+    expect(usage()).toEqual({ ...recount(), records: 1 })
   })
 
   it('上限を超えた後でも、使用量を増やさない push（墓標で小さくなる等）は通る', async () => {
@@ -321,6 +370,58 @@ describe('端から端まで: 2 台の端末 → HttpTransport → Worker → D1
     expect(engine.getStatus()).toMatchObject({ phase: 'quota', pending: 1 })
     expect(await store.getRecord('reagent', 'from-other-device')).toBeDefined()
     expect(db.db.prepare('SELECT COUNT(*) AS n FROM records').get()).toEqual({ n: 1 })
+  })
+
+  it('容量上限で止まっても、削除すれば空きができ、待っていた変更も送られる', async () => {
+    const env: Env = { DB: db, SYNC_ALLOWED_USER_IDS: 'user-1' }
+    const transport = new HttpTransport({
+      baseUrl: 'https://colloion.tomu-ai.dev',
+      getToken: () => auth.token('user-1'),
+      fetch: async (input, init) =>
+        handle(new Request(input as string, init), env, {
+          authConfig: auth.config,
+          quota: { records: 2, bytes: 1e9 },
+        }),
+    })
+    await push(db, 'user-1', [change('old-1', null), change('old-2', null)])
+    const store = new IndexedDbAdapter('e2e-quota-free')
+    const engine = new SyncEngine(store, transport)
+    await engine.attach('user-1')
+    await engine.syncOnce()
+
+    // 上限いっぱいなので新しい試薬は送れない
+    await store.saveReagent(reagent('new-1'))
+    await store.saveReagent(reagent('new-2'))
+    await expect(engine.syncOnce()).rejects.toThrow()
+    expect(engine.getStatus()).toMatchObject({ phase: 'quota', pending: 2 })
+
+    // 1 件削除しても追加 2 件には足りない。混ぜて送ると（+2 −1）丸ごと断られて削除も止まるが、
+    // 削除は先に単独で送られるので、サーバーでは削除が済んでいる
+    await store.deleteReagent('old-1')
+    await expect(engine.syncOnce()).rejects.toThrow()
+    expect(engine.getStatus()).toMatchObject({ phase: 'quota', pending: 2 })
+    expect(db.db.prepare("SELECT deleted FROM records WHERE id = 'old-1'").get()).toEqual({ deleted: 1 })
+
+    // もう 1 件削除すると、待っていた追加が通る
+    await store.deleteReagent('old-2')
+    // サーバーに届いていない試薬は、削除しても墓標を送らない
+    await store.saveReagent(reagent('never-sent'))
+    await store.deleteReagent('never-sent')
+    await engine.syncOnce()
+    expect(engine.getStatus()).toMatchObject({ phase: 'idle', pending: 0 })
+    const rows = db.db.prepare("SELECT id, deleted FROM records WHERE user_id = 'user-1' ORDER BY id").all()
+    expect(rows).toEqual([
+      { id: 'new-1', deleted: 0 },
+      { id: 'new-2', deleted: 0 },
+      { id: 'old-1', deleted: 1 },
+      { id: 'old-2', deleted: 1 },
+    ])
+    expect(await store.getRecord('reagent', 'old-1')).toEqual({
+      id: 'old-1',
+      updatedAt: expect.any(Number),
+      deletedAt: expect.any(Number),
+      rev: expect.any(Number),
+    })
   })
 
   it('トークンが期限切れなら unauthorized で止まる', async () => {

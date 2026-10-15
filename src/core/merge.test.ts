@@ -6,6 +6,7 @@ import {
   mergeSession,
   mergeStock,
   preserveAppendOnly,
+  toTombstone,
   unionUsages,
 } from './merge'
 import type { Batch, Reagent, Stock } from './model'
@@ -189,5 +190,40 @@ describe('preserveAppendOnly — 古い状態からの保存で追記のみの�
   it('既存が無ければそのまま', () => {
     const r = reagent({})
     expect(preserveAppendOnly('reagent', r, undefined)).toBe(r)
+  })
+
+  it('既存が墓標なら（使用記録も measured も無い）そのまま', () => {
+    const s: Stock = {
+      id: 's1',
+      reagentId: 'r1',
+      molarity: 1,
+      preparedAt: new Date(T).toISOString(),
+      initialVolumeMl: 100,
+      usages: [{ id: 'u1', at: T, doseMl: 1 }],
+      updatedAt: T,
+    }
+    const tomb = toTombstone({ ...s, deletedAt: T, updatedAt: T })
+    expect(preserveAppendOnly('stock', s, tomb)).toBe(s)
+  })
+})
+
+describe('墓標の形', () => {
+  it('toTombstone は id・updatedAt・deletedAt・rev だけを残す', () => {
+    const r = reagent({ deletedAt: T + 5, updatedAt: T + 5, rev: 3 })
+    expect(toTombstone(r)).toEqual({ id: 'r1', updatedAt: T + 5, deletedAt: T + 5, rev: 3 })
+    expect(toTombstone(reagent({ deletedAt: T }))).toEqual({ id: 'r1', updatedAt: T, deletedAt: T })
+    expect(() => toTombstone(reagent({}))).toThrow()
+  })
+
+  it('mergeRecord は墓標が勝ったら本文の無い形で返す（本文付きの古い墓標でも）', () => {
+    const live = batch({ updatedAt: T + 10, rev: 2 })
+    const oldStyle = batch({ deletedAt: T + 1, updatedAt: T + 1, rev: 4 })
+    expect(mergeRecord('batch', live, oldStyle, 'dev')).toEqual({
+      id: 'b1',
+      updatedAt: T + 1,
+      deletedAt: T + 1,
+      rev: 4,
+    })
+    expect(mergeRecord('batch', live, batch({ updatedAt: T + 20 }), 'dev')).toMatchObject({ label: '2026-1013-01' })
   })
 })

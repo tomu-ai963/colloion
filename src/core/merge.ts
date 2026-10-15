@@ -9,6 +9,7 @@
  * - 削除の墓標（deletedAt）は編集より強い。削除と編集が競合したら削除が残る
  * - それ以外は updatedAt が新しい方。同値ならサーバー側（remote）
  * - rev は両者の大きい方を引き継ぐ（次に送るときの baseRev になる）
+ * - 墓標は本文を持たない（toTombstone）。削除でサーバーの容量が空くように
  */
 
 import type { Batch, Pipette, Reagent, Stock, StockUsage } from './model'
@@ -28,6 +29,22 @@ interface Versioned {
   updatedAt: number
   deletedAt?: number
   rev?: number
+}
+
+/**
+ * 削除の墓標。版の判定に要る項目（id・updatedAt・deletedAt・rev）だけを残し、本文は捨てる。
+ * 型は元の種類のまま扱うが、墓標の本文を読む所は無い（list* は墓標を除き、
+ * マージは墓標を先に判定する）。サーバーも同じ形で保存する（worker/sync.ts）
+ */
+export function toTombstone<T extends Versioned & { id: string }>(record: T): T {
+  if (record.deletedAt === undefined) throw new Error('墓標にするレコードに deletedAt がありません')
+  const t: Versioned & { id: string } = {
+    id: record.id,
+    updatedAt: record.updatedAt,
+    deletedAt: record.deletedAt,
+  }
+  if (record.rev !== undefined) t.rev = record.rev
+  return t as T
 }
 
 const maxRev = (a?: number, b?: number): number | undefined =>
@@ -106,7 +123,8 @@ export function preserveAppendOnly<K extends SyncKind>(
   incoming: SyncRecordMap[K],
   existing: SyncRecordMap[K] | undefined,
 ): SyncRecordMap[K] {
-  if (!existing) return incoming
+  // 墓標には使用記録も measured も残っていない
+  if (!existing || existing.deletedAt !== undefined) return incoming
   if (kind === 'stock') {
     const s = incoming as Stock
     return { ...s, usages: unionUsages((existing as Stock).usages, s.usages) } as SyncRecordMap[K]
@@ -119,8 +137,18 @@ export function preserveAppendOnly<K extends SyncKind>(
   return incoming
 }
 
-/** 種類ごとのマージ規則を引く */
+/** 種類ごとのマージ規則を引く。墓標が勝ったら本文を落とした形で返す */
 export function mergeRecord<K extends SyncKind>(
+  kind: K,
+  local: SyncRecordMap[K],
+  remote: SyncRecordMap[K],
+  selfDeviceId: string,
+): SyncRecordMap[K] {
+  const merged = mergeByKind(kind, local, remote, selfDeviceId)
+  return merged.deletedAt === undefined ? merged : toTombstone(merged)
+}
+
+function mergeByKind<K extends SyncKind>(
   kind: K,
   local: SyncRecordMap[K],
   remote: SyncRecordMap[K],

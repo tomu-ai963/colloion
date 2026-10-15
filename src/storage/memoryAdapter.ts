@@ -1,4 +1,5 @@
 import { newId } from '../core/id'
+import { toTombstone } from '../core/merge'
 import { emptyCounts, resolveImport, type ImportItem } from './backup'
 import type { SyncKind, SyncRecordMap } from '../core/merge'
 import type { Batch, Pipette, Reagent, Stock } from '../core/model'
@@ -7,6 +8,7 @@ import type { StorageAdapter } from './StorageAdapter'
 import {
   ChangeNotifier,
   outboxKey,
+  outboxOrder,
   rebaseLocalWrite,
   type OutboxEntry,
   type RecordUpdate,
@@ -41,8 +43,9 @@ export class MemoryAdapter implements StorageAdapter, SyncStore {
 
   private save<K extends SyncKind>(kind: K, record: SyncRecordMap[K]) {
     const table = this.tables[kind] as Map<string, SyncRecordMap[K]>
-    table.set(record.id, structuredClone(rebaseLocalWrite(kind, record, table.get(record.id))))
-    this.enqueueSync(kind, record.id)
+    const next = rebaseLocalWrite(kind, record, table.get(record.id))
+    table.set(record.id, structuredClone(next))
+    this.enqueueSync(kind, record.id, next.deletedAt !== undefined)
     this.changes.notify()
   }
 
@@ -51,8 +54,8 @@ export class MemoryAdapter implements StorageAdapter, SyncStore {
     const cur = table.get(id)
     if (!cur) return
     const now = Date.now()
-    table.set(id, { ...cur, deletedAt: now, updatedAt: now })
-    this.enqueueSync(kind, id)
+    table.set(id, toTombstone({ ...cur, deletedAt: now, updatedAt: now }))
+    this.enqueueSync(kind, id, true)
     this.changes.notify()
   }
 
@@ -111,7 +114,7 @@ export class MemoryAdapter implements StorageAdapter, SyncStore {
       counts[outcome]++
       if (next) {
         table.set(record.id, structuredClone(next))
-        this.enqueueSync(kind, record.id)
+        this.enqueueSync(kind, record.id, next.deletedAt !== undefined)
       }
     }
     if (counts.added + counts.updated > 0) this.changes.notify()
@@ -120,10 +123,12 @@ export class MemoryAdapter implements StorageAdapter, SyncStore {
 
   // ---- 同期エンジン向け（SyncStore） ----
 
-  private enqueueSync(kind: SyncKind, id: string) {
+  private enqueueSync(kind: SyncKind, id: string, deleted: boolean) {
     const key = outboxKey(kind, id)
     const n = (this.outbox.get(key)?.n ?? 0) + 1
-    this.outbox.set(key, { key, kind, id, n, queuedAt: Date.now() })
+    const entry: OutboxEntry = { key, kind, id, n, queuedAt: Date.now() }
+    if (deleted) entry.deleted = true
+    this.outbox.set(key, entry)
   }
 
   async getRecord<K extends SyncKind>(kind: K, id: string) {
@@ -140,19 +145,19 @@ export class MemoryAdapter implements StorageAdapter, SyncStore {
     const before = cur === undefined ? undefined : structuredClone(cur)
     const { next, enqueue } = fn(before === undefined ? undefined : structuredClone(before))
     if (next !== undefined) table.set(id, structuredClone(next))
-    if (enqueue) this.enqueueSync(kind, id)
+    if (enqueue) this.enqueueSync(kind, id, (next ?? cur)?.deletedAt !== undefined)
     return { before, after: next ?? before }
   }
   async enqueue(kind: SyncKind, id: string) {
-    this.enqueueSync(kind, id)
+    this.enqueueSync(kind, id, this.tables[kind].get(id)?.deletedAt !== undefined)
   }
   async enqueueAll() {
     for (const kind of Object.keys(this.tables) as SyncKind[]) {
-      for (const id of this.tables[kind].keys()) this.enqueueSync(kind, id)
+      for (const [id, r] of this.tables[kind]) this.enqueueSync(kind, id, r.deletedAt !== undefined)
     }
   }
   async readOutbox(limit: number) {
-    return [...this.outbox.values()].sort((a, b) => a.queuedAt - b.queuedAt).slice(0, limit)
+    return [...this.outbox.values()].sort(outboxOrder).slice(0, limit)
   }
   async ackOutbox(entries: Pick<OutboxEntry, 'key' | 'n'>[]) {
     for (const e of entries) if (this.outbox.get(e.key)?.n === e.n) this.outbox.delete(e.key)

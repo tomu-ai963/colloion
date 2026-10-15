@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase, type IDBPTransaction } from 'idb'
 import { newId } from '../core/id'
+import { toTombstone } from '../core/merge'
 import { emptyCounts, resolveImport, type ImportItem } from './backup'
 import type { SyncKind, SyncRecordMap } from '../core/merge'
 import type { Batch, Pipette, Reagent, Stock } from '../core/model'
@@ -16,6 +17,7 @@ import type { StorageAdapter } from './StorageAdapter'
 import {
   ChangeNotifier,
   outboxKey,
+  outboxOrder,
   rebaseLocalWrite,
   type OutboxEntry,
   type RecordUpdate,
@@ -48,12 +50,17 @@ const DEVICE_ID_KEY = 'deviceId'
 
 type WriteTx = IDBPTransaction<ColloionDB, (RecordStore | 'outbox')[], 'readwrite'>
 
-/** 送信待ちに積む（同じレコードは1件にまとまり、版番号 n が進む） */
-async function enqueueIn(tx: WriteTx, kind: SyncKind, id: string) {
+/**
+ * 送信待ちに積む（同じレコードは1件にまとまり、版番号 n が進む）。
+ * deleted = 積む版が墓標か（readOutbox で削除を先に送るため）
+ */
+async function enqueueIn(tx: WriteTx, kind: SyncKind, id: string, deleted: boolean) {
   const outbox = tx.objectStore('outbox')
   const key = outboxKey(kind, id)
   const cur = await outbox.get(key)
-  await outbox.put({ key, kind, id, n: (cur?.n ?? 0) + 1, queuedAt: Date.now() })
+  const entry: OutboxEntry = { key, kind, id, n: (cur?.n ?? 0) + 1, queuedAt: Date.now() }
+  if (deleted) entry.deleted = true
+  await outbox.put(entry)
 }
 
 export class IndexedDbAdapter implements StorageAdapter, SyncStore {
@@ -139,13 +146,14 @@ export class IndexedDbAdapter implements StorageAdapter, SyncStore {
     const tx = db.transaction([STORE_OF[kind], 'outbox'], 'readwrite')
     const store = tx.objectStore(STORE_OF[kind])
     const existing = (await store.get(record.id)) as SyncRecordMap[K] | undefined
-    await store.put(rebaseLocalWrite(kind, record, existing))
-    await enqueueIn(tx, kind, record.id)
+    const next = rebaseLocalWrite(kind, record, existing)
+    await store.put(next)
+    await enqueueIn(tx, kind, record.id, next.deletedAt !== undefined)
     await tx.done
     this.changes.notify()
   }
 
-  /** 物理削除せず墓標を書く */
+  /** 物理削除せず墓標を書く（本文は残さない） */
   private async tombstone(kind: SyncKind, id: string) {
     const db = await this.dbPromise
     const tx = db.transaction([STORE_OF[kind], 'outbox'], 'readwrite')
@@ -153,8 +161,8 @@ export class IndexedDbAdapter implements StorageAdapter, SyncStore {
     const cur = await store.get(id)
     if (cur) {
       const now = Date.now()
-      await store.put({ ...cur, deletedAt: now, updatedAt: now })
-      await enqueueIn(tx, kind, id)
+      await store.put(toTombstone({ ...cur, deletedAt: now, updatedAt: now }))
+      await enqueueIn(tx, kind, id, true)
     }
     await tx.done
     if (cur) this.changes.notify()
@@ -224,7 +232,7 @@ export class IndexedDbAdapter implements StorageAdapter, SyncStore {
       counts[outcome]++
       if (next) {
         await store.put(next as never)
-        await enqueueIn(tx, kind, record.id)
+        await enqueueIn(tx, kind, record.id, next.deletedAt !== undefined)
       }
     }
     await tx.done
@@ -249,15 +257,16 @@ export class IndexedDbAdapter implements StorageAdapter, SyncStore {
     const before = (await store.get(id)) as SyncRecordMap[K] | undefined
     const { next, enqueue } = fn(before)
     if (next !== undefined) await store.put(next)
-    if (enqueue) await enqueueIn(tx, kind, id)
+    if (enqueue) await enqueueIn(tx, kind, id, (next ?? before)?.deletedAt !== undefined)
     await tx.done
     return { before, after: next ?? before }
   }
 
   async enqueue(kind: SyncKind, id: string) {
     const db = await this.dbPromise
-    const tx = db.transaction(['outbox'], 'readwrite') as unknown as WriteTx
-    await enqueueIn(tx, kind, id)
+    const tx = db.transaction([STORE_OF[kind], 'outbox'], 'readwrite')
+    const cur = await tx.objectStore(STORE_OF[kind]).get(id)
+    await enqueueIn(tx, kind, id, cur?.deletedAt !== undefined)
     await tx.done
   }
 
@@ -266,16 +275,17 @@ export class IndexedDbAdapter implements StorageAdapter, SyncStore {
     const kinds = Object.keys(STORE_OF) as SyncKind[]
     const tx = db.transaction([...kinds.map((k) => STORE_OF[k]), 'outbox'], 'readwrite')
     for (const kind of kinds) {
-      for (const id of await tx.objectStore(STORE_OF[kind]).getAllKeys()) {
-        await enqueueIn(tx, kind, id)
+      for (const r of await tx.objectStore(STORE_OF[kind]).getAll()) {
+        await enqueueIn(tx, kind, r.id, r.deletedAt !== undefined)
       }
     }
     await tx.done
   }
 
   async readOutbox(limit: number) {
-    const all = await (await this.dbPromise).getAll('outbox', undefined, limit)
-    return all.sort((a, b) => a.queuedAt - b.queuedAt)
+    // 並べ替えてから切るので全件読む（送信待ちは多くてもレコード数まで）
+    const all = await (await this.dbPromise).getAll('outbox')
+    return all.sort(outboxOrder).slice(0, limit)
   }
 
   async ackOutbox(entries: Pick<OutboxEntry, 'key' | 'n'>[]) {

@@ -44,7 +44,7 @@ export function syncDetail(status: SyncStatus): string {
     case 'forbidden':
       return 'このアカウントは、この同期サーバーで同期できる対象になっていません。記録はこの端末に保存されています。'
     case 'quota':
-      return '同期サーバーに置ける量の上限に達したため、新しい変更を送れません。記録はこの端末に保存されています。削除してもサーバーの使用量は減りません。'
+      return '同期サーバーに置ける量の上限に達したため、新しい変更を送れません。記録はこの端末に保存されています。不要な記録を削除すると空きができます。'
     case 'idle':
       if (status.pending > 0) return `${status.pending} 件の変更を送る準備をしています。`
       return status.lastSyncedAt !== null

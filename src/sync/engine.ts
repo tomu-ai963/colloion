@@ -8,6 +8,8 @@
  *   マージ結果がサーバーの版と違えば（こちらに未送信の変更がある等）送信待ちに積む
  * - push: 送信待ちのレコードを最新版で読み直し、baseRev（元にした版）を添えて送る。
  *   競合が返ったらサーバーの版とマージし、必要なら次のラウンドで送り直す
+ * - 削除（墓標）は他の変更より先に、単独のラウンドで送る。容量上限のサーバーは追加を含む
+ *   push を丸ごと断るので、混ぜると削除まで止まり、削除で空きを作れなくなるため
  *
  * 送信の予約は「ローカルの書き込みから DEBOUNCE_MS 後、ただし前回の同期から
  * MIN_INTERVAL_MS は空ける」。Run Mode は 10 秒ごとに保存するが、
@@ -140,7 +142,8 @@ export class SyncEngine {
         const r = await this.pushRound(applied)
         pushed += r.pushed
         conflicts += r.conflicts
-        if (r.sent === 0 || r.conflicts === 0) break
+        // 削除だけを送ったラウンドの後は、残りの変更を続けて送る
+        if (!r.more && (r.sent === 0 || r.conflicts === 0)) break
       }
       if (applied.size > 0) this.opts.onApplied?.(applied)
       this.failures = 0
@@ -200,13 +203,20 @@ export class SyncEngine {
   }
 
   private async pushRound(applied: Set<SyncKind>) {
-    const entries = await this.store.readOutbox(PUSH_BATCH_LIMIT)
+    const read = await this.store.readOutbox(PUSH_BATCH_LIMIT)
+    // readOutbox は削除が先。削除があれば今回は削除だけを送る
+    const entries = read[0]?.deleted ? read.filter((e) => e.deleted) : read
+    const more = entries.length < read.length
     const changes: PushChange[] = []
     const sentN = new Map<string, number>()
     const gone: { key: string; n: number }[] = []
     for (const e of entries) {
       const record = await this.store.getRecord(e.kind, e.id)
-      if (!record) {
+      // 一度もサーバーに届いていない（rev の無い）レコードの削除は送らない。
+      // 送ると、サーバーに無いものの墓標を作って容量を使うだけになる。
+      // 実はサーバーに届いていた（応答だけ失った）場合も、次の pull でその版が届き、
+      // 墓標が勝って rev 付きで送り直される
+      if (!record || (record.deletedAt !== undefined && record.rev === undefined)) {
         gone.push(e)
         continue
       }
@@ -214,7 +224,7 @@ export class SyncEngine {
       sentN.set(e.key, e.n)
     }
     if (gone.length > 0) await this.store.ackOutbox(gone)
-    if (changes.length === 0) return { sent: 0, pushed: 0, conflicts: 0 }
+    if (changes.length === 0) return { sent: 0, pushed: 0, conflicts: 0, more }
 
     const { results } = await this.transport.push({ changes })
     const deviceId = this.deviceId!
@@ -243,7 +253,7 @@ export class SyncEngine {
       })
       if (!before || !sameContent(after!, before)) applied.add(r.kind)
     }
-    return { sent: changes.length, pushed, conflicts }
+    return { sent: changes.length, pushed, conflicts, more }
   }
 
   // ---- 予約と自動実行 ----

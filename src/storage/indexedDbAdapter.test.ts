@@ -158,4 +158,39 @@ describe('IndexedDbAdapter: 送信待ちキュー（v4）', () => {
     await st.saveReagent(reagent(2))
     expect(count).toBe(2)
   })
+
+  it('削除は本文を残さない墓標を書く', async () => {
+    const st = new IndexedDbAdapter('tomb-test')
+    await st.saveReagent(reagent(1))
+    await st.updateRecord('reagent', 'r1', (cur) => ({ next: { ...cur!, rev: 7 } }))
+    await st.deleteReagent('r1')
+    expect(await st.getRecord('reagent', 'r1')).toEqual({
+      id: 'r1',
+      updatedAt: expect.any(Number),
+      deletedAt: expect.any(Number),
+      rev: 7,
+    })
+  })
+
+  it('送信待ちは削除が先（それぞれ積んだ順）', async () => {
+    const st = new IndexedDbAdapter('order-test')
+    await st.saveReagent({ ...reagent(1), id: 'a' })
+    await st.saveReagent({ ...reagent(1), id: 'b' })
+    await st.saveReagent({ ...reagent(1), id: 'c' })
+    await st.deleteReagent('c')
+    await st.deleteReagent('a')
+    // 同じミリ秒に積まれることがあるので、削除どうしの順は問わない
+    const entries = await st.readOutbox(10)
+    expect(entries.map((e) => e.deleted === true)).toEqual([true, true, false])
+    expect(entries.slice(0, 2).map((e) => e.id).sort()).toEqual(['a', 'c'])
+    expect((await st.readOutbox(1))[0]!.deleted).toBe(true)
+    // 削除した後に同じ ID で保存し直したら削除ではなくなる
+    await st.saveReagent({ ...reagent(2), id: 'c' })
+    expect((await st.readOutbox(10)).map((e) => [e.id, e.deleted === true])[0]).toEqual(['a', true])
+    expect((await st.readOutbox(10)).filter((e) => e.deleted)).toHaveLength(1)
+    // enqueueAll（初回ログイン）も墓標を見分ける
+    await st.ackOutbox((await st.readOutbox(10)).map((e) => ({ key: e.key, n: e.n })))
+    await st.enqueueAll()
+    expect((await st.readOutbox(10)).filter((e) => e.deleted).map((e) => e.id)).toEqual(['a'])
+  })
 })

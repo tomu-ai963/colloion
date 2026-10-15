@@ -13,6 +13,11 @@ export interface OutboxEntry {
   id: string
   n: number
   queuedAt: number
+  /**
+   * 積んだ時点でレコードが削除の墓標だったか。送信は削除を先に、単独で行う
+   * （容量上限で追加が断られていても、削除で空きを作れるように）。v4 の既存の行には無い
+   */
+  deleted?: boolean
 }
 
 export const outboxKey = (kind: SyncKind, id: string): string => `${kind}:${id}`
@@ -44,6 +49,7 @@ export interface SyncStore {
   enqueue(kind: SyncKind, id: string): Promise<void>
   /** 全レコードを送信待ちに積む（初回ログイン時に既存データをまとめて送るため） */
   enqueueAll(): Promise<void>
+  /** 削除（deleted）を先に、それぞれ積んだ順で limit 件まで */
   readOutbox(limit: number): Promise<OutboxEntry[]>
   /** 送信済みの確認。読んだ時点から版番号 n が変わっていない（新しい変更が無い）ものだけ消す */
   ackOutbox(entries: Pick<OutboxEntry, 'key' | 'n'>[]): Promise<void>
@@ -53,6 +59,10 @@ export interface SyncStore {
   /** アプリからの書き込み（送信待ちが増えた）を知らせる。戻り値で購読解除 */
   onLocalChange(listener: () => void): () => void
 }
+
+/** readOutbox の並び順: 削除が先、その中は積んだ順 */
+export const outboxOrder = (a: OutboxEntry, b: OutboxEntry): number =>
+  Number(b.deleted === true) - Number(a.deleted === true) || a.queuedAt - b.queuedAt
 
 /** onLocalChange の購読者を持つだけの小さな仕組み */
 export class ChangeNotifier {
