@@ -1,14 +1,14 @@
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Batch, Stock } from '../core/model'
+import type { Batch, Reagent, Stock } from '../core/model'
 import { createSession } from '../core/session'
 import { stockRemainingMl } from '../core/stock'
 import { IndexedDbAdapter } from '../storage/indexedDbAdapter'
 import { MemoryAdapter } from '../storage/memoryAdapter'
-import { DEBOUNCE_MS, MIN_INTERVAL_MS, SyncEngine } from './engine'
+import { DEBOUNCE_MS, MAX_PUSH_ROUNDS, MIN_INTERVAL_MS, SyncEngine } from './engine'
 import { MemorySyncServer } from './memoryServer'
-import { SyncAuthError, SyncForbiddenError, type SyncTransport } from './protocol'
+import { PUSH_BATCH_LIMIT, SyncAuthError, SyncForbiddenError, type SyncTransport } from './protocol'
 
 const T = 1_760_000_000_000
 
@@ -192,7 +192,7 @@ describe('SyncEngine: 2 台の端末間の同期', () => {
     }
   })
 
-  it('送信中に同じレコードが更新されたら、その更新は送信待ちに残る', async () => {
+  it('送信中に同じレコードが更新されたら、その更新は消えずに次のラウンドで送られる', async () => {
     let during: (() => Promise<void>) | null = null
     const raw = server.transport()
     const a = device('a', server, {
@@ -210,16 +210,14 @@ describe('SyncEngine: 2 台の端末間の同期', () => {
       const cur = (await a.store.getRecord('batch', 'b1'))!
       await a.store.saveBatch({ ...cur, result: { measuredTds: 7 }, updatedAt: T + 50 })
     }
-    await a.engine.syncOnce()
+    const r = await a.engine.syncOnce()
 
-    // 新しい書き込みは消えず、rev は送った版の番号を引き継いでいる
+    // 新しい書き込みは消えず、送った版の rev を元に（競合せず）同じ同期の中で送られる
+    expect(r).toMatchObject({ pushed: 2, conflicts: 0 })
     const local = (await a.store.getRecord('batch', 'b1'))!
     expect(local.result?.measuredTds).toBe(7)
     expect(local.rev).toBe(server.get('batch', 'b1')!.rev)
-    expect(await a.store.countOutbox()).toBe(1)
-
-    const r = await a.engine.syncOnce()
-    expect(r.conflicts).toBe(0)
+    expect(await a.store.countOutbox()).toBe(0)
     expect((server.get('batch', 'b1') as Batch).result?.measuredTds).toBe(7)
   })
 
@@ -343,5 +341,75 @@ describe('SyncEngine: 送信の予約', () => {
     expect(pull).toHaveBeenCalledTimes(2)
     expect(server.get('batch', 'b1')!.updatedAt).toBe(T + 4)
     engine.stop()
+  })
+})
+
+describe('SyncEngine: 送信待ちが多いとき', () => {
+  const reagent = (i: number): Reagent => ({
+    id: `r${i}`,
+    name: `試薬${i}`,
+    formula: 'NaCl',
+    mw: 58.44,
+    purityPct: 100,
+    role: '電解質',
+    updatedAt: T,
+  })
+
+  afterEach(() => vi.useRealTimers())
+
+  it(`${PUSH_BATCH_LIMIT} 件を超えても 1 回の同期で送り切る`, async () => {
+    const store = new MemoryAdapter()
+    const engine = new SyncEngine(store, server.transport())
+    await engine.attach('user-1')
+    for (let i = 0; i < 100; i++) await store.saveReagent(reagent(i))
+    const report = await engine.syncOnce()
+    expect(report.pushed).toBe(100)
+    expect(engine.getStatus().pending).toBe(0)
+    expect(server.pull(0, 1000).changes).toHaveLength(100)
+  })
+
+  it('1 回の同期のラウンド上限を超えた分は、間隔を空けて続けて送る', async () => {
+    vi.useFakeTimers()
+    const store = new MemoryAdapter()
+    const engine = new SyncEngine(store, server.transport())
+    await engine.attach('user-1')
+    const total = MAX_PUSH_ROUNDS * PUSH_BATCH_LIMIT + 10
+    for (let i = 0; i < total; i++) await store.saveReagent(reagent(i))
+
+    const report = await engine.syncOnce()
+    expect(report.pushed).toBe(MAX_PUSH_ROUNDS * PUSH_BATCH_LIMIT)
+    expect(engine.getStatus()).toMatchObject({ phase: 'idle', pending: 10 })
+
+    // 書き込みや定期の同期が無くても、MIN_INTERVAL_MS 後に残りが送られる
+    await vi.advanceTimersByTimeAsync(MIN_INTERVAL_MS)
+    expect(engine.getStatus().pending).toBe(0)
+    expect(server.pull(0, 2000).changes).toHaveLength(total)
+    engine.stop()
+  })
+
+  it('同じレコードが競合し続けても、同期は終わる', async () => {
+    let pushes = 0
+    const transport: SyncTransport = {
+      pull: async (since) => ({ changes: [], cursor: since, hasMore: false }),
+      // サーバーには常に古い版があり、何度送っても競合を返す（ありえないが、止まることを確かめる）
+      push: async (req) => {
+        pushes++
+        return {
+          results: req.changes.map((c) => ({
+            kind: c.kind,
+            id: c.id,
+            status: 'conflict' as const,
+            current: { ...c.record, updatedAt: 1, rev: 1 },
+          })),
+        }
+      },
+    }
+    const store = new MemoryAdapter()
+    const engine = new SyncEngine(store, transport)
+    await engine.attach('user-1')
+    await store.saveReagent(reagent(0))
+    await engine.syncOnce()
+    expect(pushes).toBe(3)
+    expect(engine.getStatus()).toMatchObject({ phase: 'idle', pending: 1 })
   })
 })
