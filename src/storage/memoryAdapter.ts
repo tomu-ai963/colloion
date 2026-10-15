@@ -1,4 +1,5 @@
 import { newId } from '../core/id'
+import { emptyCounts, resolveImport, type ImportItem } from './backup'
 import type { SyncKind, SyncRecordMap } from '../core/merge'
 import type { Batch, Pipette, Reagent, Stock } from '../core/model'
 import type { Session } from '../core/session'
@@ -100,6 +101,21 @@ export class MemoryAdapter implements StorageAdapter, SyncStore {
   }
   async deleteSession(id: string) {
     this.tombstone('session', id)
+  }
+
+  async importRecords(items: ImportItem[]) {
+    const counts = emptyCounts()
+    for (const { kind, record } of items) {
+      const table = this.tables[kind] as Map<string, typeof record>
+      const { outcome, next } = resolveImport(kind, table.get(record.id), record, this.deviceId)
+      counts[outcome]++
+      if (next) {
+        table.set(record.id, structuredClone(next))
+        this.enqueueSync(kind, record.id)
+      }
+    }
+    if (counts.added + counts.updated > 0) this.changes.notify()
+    return counts
   }
 
   // ---- 同期エンジン向け（SyncStore） ----
