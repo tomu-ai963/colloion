@@ -34,6 +34,15 @@ npm run migrate:local            # ローカル D1 にマイグレーション�
 npm run dev:worker               # ビルドして wrangler dev（http://localhost:8787）
 ```
 
+**本番の Neon Auth は localhost からの接続を許可していない**ので（Allow Localhost 無効）、
+この構成でもログインは `INVALID_ORIGIN`（403）で断られます。ログインまで試すときだけ一時的に
+有効にし、終わったら無効に戻してください（本番の Neon Auth の設定なので、戻し忘れに注意）:
+
+```powershell
+neon neon-auth domain allow-localhost enable  --project-id purple-thunder-33504993 --branch br-wild-union-b3pihgpl
+neon neon-auth domain allow-localhost disable --project-id purple-thunder-33504993 --branch br-wild-union-b3pihgpl
+```
+
 `npm run dev`（vite）と `npx wrangler dev` を並べて起動すると、vite が `/api` を
 wrangler dev に中継するので、画面のホットリロードを使いながら同期も試せます。
 Worker のテストは `node:sqlite` を使うため Node 22.13 以上が必要です。
@@ -195,6 +204,8 @@ S や Cl など同位体組成が試料により変わる元素は、IUPAC で�
 ### 認証
 
 - **Neon Managed Better Auth** のメール OTP（6 桁のコード）でログインします。
+- Neon Auth が受け付けるオリジンは `https://colloion.tomu-ai.dev`（trusted domains）だけです。
+  localhost からの接続は 2026-10-15 に無効にしました（Neon の本番チェックリストの項目）。
 - フロント・同期 API・認証を **1 つの Worker・同一オリジン**で配信します。認証は
   `/api/auth/*` が Neon へ中継（リバースプロキシ）し、セッション Cookie を first-party に
   します。別サイトのままだと Safari（ITP）などで Cookie が落ちるためです。
