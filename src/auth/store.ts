@@ -35,13 +35,21 @@ export interface AuthState {
   signOut(): Promise<void>
 }
 
-/** 同期サーバーがあるか（/api/health が答えるか） */
-async function serverAvailable(): Promise<boolean> {
+/**
+ * 同期サーバーがあるか（/api/health が答えるか）。
+ * unreachable = 通信できなかった（オフラインで起動した等）。サーバーが無いのとは区別する
+ */
+async function checkServer(): Promise<'ok' | 'absent' | 'unreachable'> {
+  let res: Response
   try {
-    const res = await fetch('/api/health', { cache: 'no-store' })
-    return res.ok && ((await res.json()) as { ok?: boolean }).ok === true
+    res = await fetch('/api/health', { cache: 'no-store' })
   } catch {
-    return false
+    return 'unreachable'
+  }
+  try {
+    return res.ok && ((await res.json()) as { ok?: boolean }).ok === true ? 'ok' : 'absent'
+  } catch {
+    return 'absent'
   }
 }
 
@@ -50,15 +58,20 @@ async function beginSync(user: AuthUser): Promise<void> {
   await startSync(new HttpTransport({ baseUrl: '', getToken: () => getAccessToken() }), user.id)
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   status: 'unknown',
   user: null,
   expired: false,
   previousEmail: null,
 
   async init() {
-    if (!(await serverAvailable())) {
+    const server = await checkServer()
+    if (server !== 'ok') {
       set({ status: 'unavailable', user: null })
+      // オフラインで起動したときは、回線が戻ったら確かめ直す（再読み込みしなくても同期が始まるように）
+      if (server === 'unreachable' && typeof window !== 'undefined') {
+        window.addEventListener('online', () => void get().init(), { once: true })
+      }
       return
     }
     const previousEmail = (await getStorage().getMeta(META_LAST_EMAIL)) ?? null
