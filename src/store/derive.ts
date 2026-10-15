@@ -10,13 +10,36 @@ import type { Reagent } from '../core/model'
 import { dropVolume, finalConcentration, requiredDrops, stockMolarity } from '../core/stock'
 import type { AppState } from './appStore'
 
-/** 還元剤の分子量（モル比計算用）。式が定まるものはパーサーから導出 */
+/**
+ * コーンシロップ（Karo ライト）の「ブドウ糖換算の見かけの分子量」[mg/mmol]。
+ * 混合物で分子量が定まらないので、還元糖をブドウ糖に換算したモル数で数える:
+ *   還元糖 [mmol] = 秤量 [mg] × 固形分 × DE / 100 ÷ 180.16（ブドウ糖）
+ * - 固形分 30 / 41: ラベルの炭水化物 30 g（大さじ 2 = 30 mL）÷ その重さ 41 g（栄養データベースの値。
+ *   ラベルには重さが無い）
+ * - DE 42: 普通のコーンシロップの代表値（Karo は DE を公表していない）。ラベルの糖類 10 g / 炭水化物 30 g
+ *   ＝ 単糖・二糖が固形分の約 1/3 という比は、DE 42 のコーンシロップの組成と合う。
+ *   原材料はコーンシロップ・塩・バニラで、砂糖（還元しない）や異性化糖は入っていない
+ * 製品のロットや保存中の水分で数割はずれうる。目安として使う
+ */
+export const CORN_SYRUP_KARO_LIGHT = {
+  solidsFraction: 30 / 41,
+  de: 42,
+} as const
+export const CORN_SYRUP_MG_PER_MMOL =
+  molecularWeight('C6H12O6') / (CORN_SYRUP_KARO_LIGHT.solidsFraction * (CORN_SYRUP_KARO_LIGHT.de / 100))
+export const CORN_SYRUP_NAME = 'コーンシロップ（Karo ライト）'
+
+/**
+ * 還元剤の分子量（モル比計算用）。式が定まるものはパーサーから導出。
+ * コーンシロップは混合物なので式は無く、mw はブドウ糖換算の見かけの値（CORN_SYRUP_MG_PER_MMOL）
+ */
 export const REDUCERS: Readonly<Record<string, { formula: string | null; mw: number | null }>> = {
   'なし（電解のみ）': { formula: null, mw: null },
   'クエン酸三ナトリウム': { formula: 'C6H5Na3O7·2H2O', mw: molecularWeight('C6H5Na3O7·2H2O') },
   'タンニン酸': { formula: 'C76H52O46', mw: molecularWeight('C76H52O46') },
   'アスコルビン酸': { formula: 'C6H8O6', mw: molecularWeight('C6H8O6') },
   '水素化ホウ素ナトリウム NaBH₄': { formula: 'NaBH4', mw: molecularWeight('NaBH4') },
+  [CORN_SYRUP_NAME]: { formula: null, mw: CORN_SYRUP_MG_PER_MMOL },
 }
 
 export interface Derived {

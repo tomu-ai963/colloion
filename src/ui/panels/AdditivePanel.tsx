@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { FormulaError, isHydrate, molecularWeight } from '../../core/formula'
 import type { AdditiveRole, AdditiveTiming } from '../../core/model'
 import { stockRemainingMl } from '../../core/stock'
-import { REDUCERS, type Derived } from '../../store/derive'
+import { CORN_SYRUP_KARO_LIGHT, CORN_SYRUP_MG_PER_MMOL, CORN_SYRUP_NAME, REDUCERS, type Derived } from '../../store/derive'
 import { useAppStore } from '../../store/appStore'
 import { Field } from '../components/Field'
 import { NumberField } from '../components/NumberField'
@@ -377,6 +377,16 @@ export function AdditivePanel({ derived }: { derived: Derived }) {
           />
         </Field>
       </div>
+
+      {additive.reducerName === CORN_SYRUP_NAME && (
+        <div className={c.note}>
+          コーンシロップは糖の混合物なので、還元糖を<b>ブドウ糖に換算したモル数</b>で数えます
+          （シロップ 1 g あたり約 {(1000 / CORN_SYRUP_MG_PER_MMOL).toFixed(2)} mmol。固形分{' '}
+          {(CORN_SYRUP_KARO_LIGHT.solidsFraction * 100).toFixed(0)}%・DE {CORN_SYRUP_KARO_LIGHT.de}{' '}
+          の推定値で、製品によって数割ずれます）。秤量はシロップそのものの重さを入れてください。
+          糖による還元は室温ではかなり遅く、加熱やアルカリ性で進みます。糖の入った液は傷みやすい点にも注意してください。
+        </div>
+      )}
 
       <div className={c.inverse}>
         <h3>モル比</h3>
