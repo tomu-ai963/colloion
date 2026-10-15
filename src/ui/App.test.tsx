@@ -47,6 +47,27 @@ describe('App', () => {
     expect(screen.getByText('理論濃度（下限）')).toBeInTheDocument()
   })
 
+  it('陰極に銅を選べ、極性反転ありなら銅が溶け出す注意が出る', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('tab', { name: /電極/ }))
+    await user.selectOptions(screen.getByLabelText(/陰極/), '銅 Cu')
+    expect(screen.getByLabelText(/陰極/)).toHaveValue('銅 Cu')
+    // 初期値は陽極 Ag・極性反転 15 分ごと
+    expect(screen.getByText(/銅の陰極が陽極側になって溶け出し/)).toBeInTheDocument()
+
+    // 陽極も銅なら同じ金属なので注意は出ない
+    await user.selectOptions(screen.getByLabelText(/陽極/), 'Cu')
+    expect(screen.queryByText(/銅の陰極が陽極側になって溶け出し/)).not.toBeInTheDocument()
+
+    // 極性反転なしでも出ない
+    await user.selectOptions(screen.getByLabelText(/陽極/), 'Ag')
+    await user.click(screen.getByRole('tab', { name: /通電/ }))
+    await user.selectOptions(screen.getByLabelText('極性反転'), 'なし')
+    await user.click(screen.getByRole('tab', { name: /電極/ }))
+    expect(screen.queryByText(/銅の陰極が陽極側になって溶け出し/)).not.toBeInTheDocument()
+  })
+
   it('Ca 選択では逆算が「電解不可」になる', async () => {
     const user = userEvent.setup()
     render(<App />)
