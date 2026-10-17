@@ -1,7 +1,7 @@
 {
   "name": "colloion",
   "private": true,
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "コロイド・イオン溶液の電解調製を記録／計算するツール（趣味実験用）",
   "license": "MIT",
   "repository": {
