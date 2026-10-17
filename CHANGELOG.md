@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.2 — 2026-10-15
 
 - 全データのバックアップ（記録タブ）
   - バッチ・試薬・母液・スポイト・通電セッションを 1 つの JSON（`colloion-backup-YYYYMMDD.json`）に書き出す
