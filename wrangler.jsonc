@@ -1,5 +1,5 @@
 // colloion Worker（Phase 3）: フロント（dist/）の配信と同期 API（/api/*）を同じオリジンで提供する。
-// deploy は `npm run build && npx wrangler deploy`（とむの確認を取ってから）。
+// deploy は `npm run build && npx wrangler deploy`。
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "colloion",
