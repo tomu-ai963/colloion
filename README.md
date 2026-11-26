@@ -38,11 +38,12 @@ npm run dev:worker               # ビルドして wrangler dev（http://localho
 
 **本番の Neon Auth は localhost からの接続を許可していない**ので（Allow Localhost 無効）、
 この構成でもログインは `INVALID_ORIGIN`（403）で断られます。ログインまで試すときだけ一時的に
-有効にし、終わったら無効に戻してください（本番の Neon Auth の設定なので、戻し忘れに注意）:
+有効にし、終わったら無効に戻してください（本番の Neon Auth の設定なので、戻し忘れに注意）。
+`<project-id>` / `<branch-id>` は `OPS.local.md`（コミットしない運用メモ）か Neon のコンソールで確かめます:
 
 ```powershell
-neon neon-auth domain allow-localhost enable  --project-id REDACTED --branch REDACTED
-neon neon-auth domain allow-localhost disable --project-id REDACTED --branch REDACTED
+neon neon-auth domain allow-localhost enable  --project-id <project-id> --branch <branch-id>
+neon neon-auth domain allow-localhost disable --project-id <project-id> --branch <branch-id>
 ```
 
 `npm run dev`（vite）と `npx wrangler dev` を並べて起動すると、vite が `/api` を
@@ -209,7 +210,7 @@ S や Cl など同位体組成が試料により変わる元素は、IUPAC で�
 
 - **Neon Managed Better Auth** のメール OTP（6 桁のコード）でログインします。
 - Neon Auth が受け付けるオリジンは `https://colloion.tomu-ai.dev`（trusted domains）だけです。
-  localhost からの接続は 2026-10-15 に無効にしました（Neon の本番チェックリストの項目）。
+  localhost からの接続は無効にしています（Neon の本番チェックリストの項目）。
 - フロント・同期 API・認証を **1 つの Worker・同一オリジン**で配信します。認証は
   `/api/auth/*` が Neon へ中継（リバースプロキシ）し、セッション Cookie を first-party に
   します。別サイトのままだと Safari（ITP）などで Cookie が落ちるためです。
@@ -266,7 +267,7 @@ pull は続きます）。使用量を増やさない push（削除・編集で�
 ### 本番
 
 https://colloion.tomu-ai.dev （1 つの Worker がフロント・`/api/sync/*`・`/api/auth/*` を配信）。
-2026-10-13 に初回デプロイ済み:
+初回のセットアップ:
 
 - D1 `colloion`（APAC）を作成し、`migrations/` を `--remote` で適用
 - secret `NEON_AUTH_BASE_URL` と `SYNC_ALLOWED_USER_IDS` を登録（`wrangler.jsonc` の vars には書かない）
@@ -277,13 +278,9 @@ https://colloion.tomu-ai.dev （1 つの Worker がフロント・`/api/sync/*`�
 D1 のマイグレーションを足したときは、先に `npx wrangler d1 migrations apply colloion --remote`、
 その後に deploy（逆の順だと、新しい Worker が古いスキーマの D1 を読んで失敗する）。
 
-2026-10-14: ユーザーごとの容量上限（`migrations/0003`）を反映し、GitHub Pages 版
-（tomu-ai963.github.io/colloion）を閉じて配信を colloion.tomu-ai.dev に一本化した。
-IndexedDB はオリジンごとに分かれるので、Pages 版で付けた記録はこちらからは見えない。
-
-2026-10-14: Neon Auth のメール送信元を、共有アドレス（`auth@mail.myneon.app`。送信数に制限がある）から
-Resend の SMTP（`smtp.resend.com:465`、差出人 `colloion <no-reply@tomu-ai.dev>`）に替えた。
-パスワードは colloion 専用の Resend API キー（Resend 上の名前 `colloion`）で、Neon 側にだけ保存している
+Neon Auth のメール送信は、共有アドレス（`auth@mail.myneon.app`。送信数に制限がある）ではなく
+Resend の SMTP（`smtp.resend.com:465`、差出人 `colloion <no-reply@tomu-ai.dev>`）を使う。
+パスワードは colloion 専用の Resend API キーで、Neon 側にだけ保存する
 （リポジトリ・Worker には持たない）。設定は `neon neon-auth config email-provider get` で確認できる。
 本文は Neon の既定のテンプレート（英語）のまま。日本語にするための webhook は次の節。
 
@@ -299,13 +296,11 @@ Resend の SMTP（`smtp.resend.com:465`、差出人 `colloion <no-reply@tomu-ai.
   Neon に再試行させます。再送で 2 通届かないよう、Resend に `Idempotency-Key`（event_id）を付けます
 - 有効にする順番: Resend で送信のみのキーを作る → `wrangler secret put RESEND_API_KEY` →
   deploy → Neon の webhook を有効化（`send.otp`・timeout 5 秒）→ 実際にログインして届くか確かめる
-- 2026-10-14 に本番で有効化（Neon の webhook: `send.otp`・timeout 5 秒）。
-  実際のログインで日本語のメールが 1 通だけ届くこと（Resend の記録で delivered）を確認済み
 - **止め方**（メールが届かなくなったとき）: Neon の webhook を無効にすると、
   すぐに Neon の既定のメール（Resend の SMTP 経由・英語）に戻ります
 
 ```powershell
-neon neon-auth config webhook update --enabled false --project-id REDACTED --branch REDACTED
+neon neon-auth config webhook update --enabled false --project-id <project-id> --branch <branch-id>
 ```
 
 
