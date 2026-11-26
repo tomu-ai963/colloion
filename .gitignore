@@ -15,3 +15,6 @@ coverage/
 !.dev.vars.example
 # 手作業のバックアップ（.dev.vars 等をコピーした退避ファイルに実値が残る）
 *.bak
+
+# 運用メモ（本番の ID・実施記録。ローカル専用・コミットしない）
+OPS.local.md
